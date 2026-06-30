@@ -24,6 +24,7 @@ func runRoutingPolicyProbe(ctx context.Context, channel *model.Channel, probe op
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = service.WithHTTPClientConnectTimeout(ctx, time.Duration(probe.ProbeConnectTimeoutSeconds)*time.Second)
 	timeout := time.Duration(probe.ProbeMaxTimeSeconds) * time.Second
 	if timeout <= 0 {
 		timeout = 12 * time.Second

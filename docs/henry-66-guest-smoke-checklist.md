@@ -5,6 +5,7 @@ This file is a guest-side checklist for the step after targeted Go tests pass. I
 ## Scope
 
 - Target: Debian guest inside `/66`, not the Windows host.
+- Current host-side guest SSH mapping: `127.0.0.1:22222 -> guest:22`.
 - Runtime: Docker Compose inside the guest.
 - Database/cache: guest-local Postgres + Redis from the project compose stack.
 - Do not use `/66` Windows host MySQL `3306`.
@@ -17,6 +18,12 @@ This file is a guest-side checklist for the step after targeted Go tests pass. I
 - Guest workspace: `/home/newapi/henry-newapi`.
 - Docker Engine and Compose plugin are available in the guest.
 - Any existing `new-api`, `postgres`, or `redis` containers in the guest are disposable test containers, not unrelated services.
+
+## Host-Side Entry Note
+
+- Connect to the Windows `/66` host first.
+- From that host, reach the Debian guest through `127.0.0.1:22222 -> guest:22`.
+- Do not write passwords, private keys, or other credentials into this repository while doing that handoff.
 
 ## Port Strategy
 
@@ -39,6 +46,27 @@ docker compose -f docker-compose.yml -f docker-compose.henry-smoke.override.yml 
 
 This keeps the browser/API check on the guest loopback unless a separate host port-forwarding step is explicitly authorized later.
 
+## Image Availability Note
+
+Default compose uses `calciumion/new-api:latest`, `postgres:15`, and `redis:latest`.
+
+If the guest cannot pull from Docker Hub during smoke:
+
+- do not switch to Windows host databases or host services;
+- keep the smoke guest-local;
+- prefer a disposable guest-local fallback using:
+  - current guest-built `./new-api` bind-mounted to `/new-api:ro`;
+  - cached guest-local `postgres:16-alpine`;
+  - cached guest-local `redis:7-alpine`;
+  - a temporary full smoke compose file such as `docker-compose.henry-smoke.full.yml`;
+- preserve the same acceptance contract:
+  - `127.0.0.1:13000 -> 3000`
+  - guest-local Postgres/Redis only
+  - `/api/status` success
+  - setup completed or blocker recorded
+  - no host `3306` / `5000` dependency
+  - no public exposure
+
 ## Smoke Commands
 
 ```bash
@@ -46,7 +74,9 @@ set -euo pipefail
 
 cd /home/newapi/henry-newapi
 
-mkdir -p data logs
+mkdir -p data logs web/default/dist web/classic/dist
+printf '<!doctype html><html><body>placeholder</body></html>' > web/default/dist/index.html
+printf '<!doctype html><html><body>placeholder</body></html>' > web/classic/dist/index.html
 
 cat > docker-compose.henry-smoke.override.yml <<'YAML'
 services:
@@ -59,13 +89,26 @@ services:
       - TZ=Asia/Shanghai
 YAML
 
-docker compose -f docker-compose.yml -f docker-compose.henry-smoke.override.yml config >/tmp/henry-newapi-compose-rendered.yml
+docker compose -f docker-compose.yml -f docker-compose.henry-smoke.override.yml down || true
+docker compose -f docker-compose.yml -f docker-compose.henry-smoke.override.yml config >/home/newapi/henry-newapi-compose-rendered.yml
 docker compose -f docker-compose.yml -f docker-compose.henry-smoke.override.yml up -d --build
 
 docker compose -f docker-compose.yml -f docker-compose.henry-smoke.override.yml ps
 
 for i in $(seq 1 60); do
-  if wget -q -O - http://127.0.0.1:13000/api/status | grep -q '"success"[[:space:]]*:[[:space:]]*true'; then
+  if python3 - <<'PY'
+import json
+import sys
+import urllib.request
+
+try:
+    with urllib.request.urlopen("http://127.0.0.1:13000/api/status", timeout=3) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    sys.exit(0 if payload.get("success") is True else 1)
+except Exception:
+    sys.exit(1)
+PY
+  then
     echo "api status ok"
     break
   fi
@@ -77,6 +120,22 @@ for i in $(seq 1 60); do
   fi
 done
 ```
+
+## Evidence To Capture
+
+After the current-snapshot smoke rerun, capture at least:
+
+- rendered compose config path: `/home/newapi/henry-newapi-compose-rendered.yml`
+- `docker compose ... ps`
+- successful `/api/status` response body from `http://127.0.0.1:13000/api/status`
+- if setup is required, the exact setup state or blocker
+- if the stack fails, `docker compose ... logs --tail=200 new-api`
+
+These outputs are the minimum needed to refresh:
+
+- `docs/henry-66-runtime-evidence-log.md`
+- `docs/henry-66-acceptance-matrix.md`
+- the final read-only audit
 
 ## Manual Setup Gate
 
@@ -116,3 +175,9 @@ Only remove volumes after confirming they are disposable guest smoke volumes:
 docker compose -f docker-compose.yml -f docker-compose.henry-smoke.override.yml down -v
 ```
 
+For the temporary full-fallback smoke file:
+
+```bash
+cd /home/newapi/henry-newapi
+docker compose -f docker-compose.henry-smoke.full.yml down -v
+```

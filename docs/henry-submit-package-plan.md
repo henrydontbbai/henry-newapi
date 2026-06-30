@@ -1,32 +1,18 @@
 # Henry NewAPI Submit Package Boundary
 
-This file defines the current submit-package boundary for the native routing strategy slice after the completed `/66` guest verification.
+This file defines the current submit-package boundary for the probe/restore increment on top of the already-pushed native-routing baseline.
 
 ## Include
 
-- Native routing source:
-  - `setting/operation_setting/routing_policy_setting.go`
-  - `routingpolicy/runtime.go`
-  - `service/routing_policy.go`
-  - `model/routing_policy_hooks.go`
+- Existing native-routing baseline source and tests already tracked for this slice.
+- Current increment source:
   - `controller/routing_policy_probe.go`
-- Routing-related wiring and integration:
-  - `controller/relay.go`
-  - `controller/system_task_handlers.go`
-  - `middleware/distributor.go`
-  - `model/ability.go`
-  - `model/channel_cache.go`
-  - `model/system_task.go`
-  - `service/channel_affinity.go`
-- In-scope tests:
-  - `setting/operation_setting/routing_policy_setting_test.go`
+  - `relay/channel/api_request.go`
+  - `routingpolicy/runtime.go`
+  - `service/http_client.go`
+- Current increment tests:
   - `service/routing_policy_test.go`
-  - `controller/relay_retry_test.go`
-  - `controller/routing_system_task_test.go`
-  - `middleware/routing_policy_distributor_test.go`
-  - `model/routing_policy_filter_test.go`
-  - `service/channel_affinity_template_test.go`
-  - `service/task_billing_test.go`
+  - `service/http_client_test.go`
 - Verification and evidence docs:
   - `docs/henry-realtime-channel-health-gate-plan.md`
   - `docs/henry-66-acceptance-matrix.md`
@@ -49,11 +35,11 @@ This file defines the current submit-package boundary for the native routing str
 ## Watch
 
 - `docs/henry-realtime-channel-health-gate-plan.md`
-  - Keep as the master status/spec doc for this slice, but do not let it drift back into "unverified" wording.
+  - Keep as the master status/spec doc for this slice; it should distinguish the pushed baseline from the current unsubmitted increment.
 - `docs/henry-66-acceptance-matrix.md`
-  - Keep as a compact gate summary, not as a mixed "todo + done" checklist.
+  - Keep as the current-snapshot gate summary, not a mixed historical checklist.
 - `docs/henry-66-runtime-evidence-log.md`
-  - Keep as captured evidence log; if a future rerun happens, append new facts instead of replacing the current verification history.
+  - Keep as the captured evidence log for this snapshot; append future rerun facts instead of silently reusing old smoke claims.
 
 ## Verification Rule
 
@@ -63,11 +49,12 @@ This file defines the current submit-package boundary for the native routing str
 
 ## Current Evidence Snapshot
 
-- `/66` Debian guest targeted Go verification: passed
-- `/66` guest Docker Compose smoke: passed
-- Exposure mode during final smoke: loopback-only `127.0.0.1:13000 -> 3000`
-- No commit, push, PR, or deployment performed yet
+- `/66` Debian guest targeted Go verification for the current snapshot: passed
+- Current package SHA256: `70C5737104CF86F894E17DFB0333E95FBCF8BECE002F9868BFF744534FD679C9`
+- `/66` guest Docker Compose smoke for the current snapshot: passed
+- Current-snapshot read-only audit acceptance: passed with notes
+- No commit, push, PR, or deployment performed for this increment
 
 ## Suggested Submit Message
 
-- `feat: add native routing policy baseline and /66 verification docs`
+- `feat: close probe restore loop and refresh /66 verification evidence`

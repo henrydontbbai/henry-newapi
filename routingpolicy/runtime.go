@@ -30,6 +30,12 @@ type HealthState struct {
 	SuccessCount        int    `json:"success_count,omitempty"`
 	LastStatusCode      int    `json:"last_status_code,omitempty"`
 	LastAffinityClearAt int64  `json:"last_affinity_clear_at,omitempty"`
+	RestorePhase        string `json:"restore_phase,omitempty"`
+	RestoreReason       string `json:"restore_reason,omitempty"`
+	RestoreHoldUntil    int64  `json:"restore_hold_until,omitempty"`
+	LastProbeAt         int64  `json:"last_probe_at,omitempty"`
+	LastProbeResult     string `json:"last_probe_result,omitempty"`
+	LastRestoreAt       int64  `json:"last_restore_at,omitempty"`
 }
 
 type Summary struct {
@@ -41,6 +47,8 @@ type Summary struct {
 	PaygoHardFailureCount         int    `json:"paygo_hard_failure_count"`
 	PaygoHardFailureChannels      []int  `json:"paygo_hard_failure_channels"`
 	LastProbeAt                   int64  `json:"last_probe_at"`
+	LastProbeAction               string `json:"last_probe_action"`
+	NextProbeAt                   int64  `json:"next_probe_at"`
 	LastNudgeAt                   int64  `json:"last_nudge_at"`
 	LastSlowScanAt                int64  `json:"last_slow_scan_at"`
 	LastSubscriptionDisableAction string `json:"last_subscription_disable_action"`
@@ -66,6 +74,12 @@ const (
 	snapshotKeyPaygoNudge               = "paygo_nudge_snapshot"
 	snapshotKeyPaygoHardFailureRestore  = "paygo_hard_failure_restore"
 	snapshotKeySubscriptionTransientRestore = "subscription_transient_restore"
+	snapshotKeySlowChannelRestore       = "slow_channel_restore"
+	restorePhaseWaitingProbe            = "waiting_probe"
+	restorePhaseProbeFailedHold         = "probe_failed_hold"
+	restorePhaseRestored                = "restored"
+	probeResultSuccess                  = "success"
+	probeResultFailed                   = "failed"
 )
 
 type roleDetector func(*model.Channel) ChannelRole
@@ -282,6 +296,8 @@ func RunAutomationOnce(ctx context.Context, detectRole roleDetector, hooks Autom
 	summary := GetSummary()
 	summary.LastSubscriptionDisableAction = ""
 	summary.LastPaygoRestoreAction = ""
+	summary.LastProbeAction = ""
+	summary.NextProbeAt = 0
 	if !IsEnabled() || detectRole == nil {
 		UpdateSummary(summary)
 		return summary
@@ -312,6 +328,7 @@ func RunAutomationOnce(ctx context.Context, detectRole roleDetector, hooks Autom
 
 	summary.LastSlowScanAt = common.GetTimestamp()
 
+	restoredSlowChannels := restoreSlowChannelAutoDisabledChannels(ctx, &summary, channelMap, now, hooks)
 	restoreSubscriptionTransientChannels(ctx, &summary, channelMap, now, hooks)
 	restorePaygoHardFailureChannels(ctx, &summary, channelMap, now, hooks)
 	restorePaygoNudgeSnapshot(ctx, &summary, channelMap, now)
@@ -320,7 +337,7 @@ func RunAutomationOnce(ctx context.Context, detectRole roleDetector, hooks Autom
 	if operation_setting.GetRoutingPolicySetting().SlowChannelPolicy.SummaryEnabled {
 		slowSamples = scanSlowSubscriptionChannels(ctx, detectRole, channels, now)
 	}
-	applySlowChannelSummary(ctx, &summary, slowSamples, subscriptionChannels, now, hooks)
+	applySlowChannelSummary(ctx, &summary, slowSamples, subscriptionChannels, restoredSlowChannels, now, hooks)
 	applySubscriptionTransientIsolation(ctx, &summary, detectRole, channels, now, hooks)
 	applyPaygoHardFailureIsolation(ctx, &summary, detectRole, channels, now, hooks)
 	applyPaygoNudge(ctx, &summary, subscriptionChannels, paygoChannels, now, hooks)
@@ -385,12 +402,17 @@ func parseChannelIDFromKey(key string) int {
 	return common.String2Int(key)
 }
 
-func applySlowChannelSummary(ctx context.Context, summary *Summary, samples []slowChannelSample, subscriptionChannels []*model.Channel, now time.Time, hooks AutomationHooks) {
+func applySlowChannelSummary(ctx context.Context, summary *Summary, samples []slowChannelSample, subscriptionChannels []*model.Channel, restoredThisRun map[int]struct{}, now time.Time, hooks AutomationHooks) {
 	if summary == nil {
 		return
 	}
 	setting := operation_setting.GetRoutingPolicySetting().SlowChannelPolicy
 	probeSetting := operation_setting.GetRoutingPolicySetting().ProbePolicy
+	restoreSnapshots, _ := loadChannelSnapshots(snapshotKeySlowChannelRestore)
+	if restoreSnapshots == nil {
+		restoreSnapshots = map[string]channelSnapshot{}
+	}
+	snapshotChanged := false
 	summary.SlowChannels = summary.SlowChannels[:0]
 	summary.SlowChannelCount = 0
 	summary.MaxSubscriptionP95 = 0
@@ -431,6 +453,9 @@ func applySlowChannelSummary(ctx context.Context, summary *Summary, samples []sl
 		if state.CooldownUntil > now.Unix() && state.Reason == "slow_channel" {
 			continue
 		}
+		if _, restored := restoredThisRun[sample.ChannelID]; restored {
+			continue
+		}
 		channel, err := model.GetChannelById(sample.ChannelID, true)
 		if err != nil || channel == nil || channel.Status != common.ChannelStatusEnabled {
 			continue
@@ -439,10 +464,25 @@ func applySlowChannelSummary(ctx context.Context, summary *Summary, samples []sl
 		if action == "" {
 			continue
 		}
+		restoreSnapshots[snapshotKey(sample.ChannelID)] = channelSnapshot{
+			ChannelID:    sample.ChannelID,
+			Status:       channel.Status,
+			Priority:     channel.GetPriority(),
+			Weight:       uint(channel.GetWeight()),
+			SnapshotAt:   now.Unix(),
+			HoldUntil:    now.Unix() + int64(probeScheduleDelaySeconds(probeSetting, setting.AutoDisableHoldSeconds)),
+			LastActionAt: now.Unix(),
+		}
+		setStateRestoreWaiting(sample.ChannelID, "slow_channel", restoreSnapshots[snapshotKey(sample.ChannelID)].HoldUntil)
+		noteSummaryNextProbeAt(summary, restoreSnapshots[snapshotKey(sample.ChannelID)].HoldUntil)
+		snapshotChanged = true
 		syncChannelStatusInSlice(subscriptionChannels, sample.ChannelID, common.ChannelStatusAutoDisabled)
 		summary.LastSubscriptionDisableAction = action
 		autoDisabledCount++
 		logger.LogWarn(ctx, fmt.Sprintf("routing policy disable slow subscription channel=%d p95=%d", sample.ChannelID, sample.P95Seconds))
+	}
+	if snapshotChanged {
+		storeChannelSnapshots(snapshotKeySlowChannelRestore, restoreSnapshots)
 	}
 	summary.SlowChannelCount = len(summary.SlowChannels)
 }
@@ -473,6 +513,58 @@ func clearAffinityByChannelIfNeeded(channelID int, cooldownSeconds int, reason s
 		logger.LogInfo(ctx, fmt.Sprintf("routing policy affinity-clear channel=%d reason=%s deleted=%d", channelID, reason, deleted))
 	}
 	return deleted > 0
+}
+
+func noteSummaryNextProbeAt(summary *Summary, holdUntil int64) {
+	if summary == nil || holdUntil <= 0 {
+		return
+	}
+	if summary.NextProbeAt == 0 || holdUntil < summary.NextProbeAt {
+		summary.NextProbeAt = holdUntil
+	}
+}
+
+func setStateRestoreWaiting(channelID int, reason string, holdUntil int64) {
+	if channelID <= 0 {
+		return
+	}
+	state, _ := loadState(channelID)
+	state.CooldownUntil = holdUntil
+	state.RestorePhase = restorePhaseWaitingProbe
+	state.RestoreReason = reason
+	state.RestoreHoldUntil = holdUntil
+	state.LastProbeAt = 0
+	state.LastProbeResult = ""
+	state.LastRestoreAt = 0
+	storeState(channelID, state)
+}
+
+func setStateProbeFailedHold(channelID int, reason string, probeAt int64, holdUntil int64) {
+	if channelID <= 0 {
+		return
+	}
+	state, _ := loadState(channelID)
+	state.CooldownUntil = holdUntil
+	state.RestorePhase = restorePhaseProbeFailedHold
+	state.RestoreReason = reason
+	state.RestoreHoldUntil = holdUntil
+	state.LastProbeAt = probeAt
+	state.LastProbeResult = probeResultFailed
+	storeState(channelID, state)
+}
+
+func setStateRestored(channelID int, reason string, probeAt int64) {
+	if channelID <= 0 {
+		return
+	}
+	state, _ := loadState(channelID)
+	state.RestorePhase = restorePhaseRestored
+	state.RestoreReason = reason
+	state.RestoreHoldUntil = 0
+	state.LastProbeAt = probeAt
+	state.LastProbeResult = probeResultSuccess
+	state.LastRestoreAt = probeAt
+	storeState(channelID, state)
 }
 
 func syncChannelStatusInSlice(channels []*model.Channel, channelID int, status int) {
@@ -685,15 +777,18 @@ func applyPaygoHardFailureIsolation(ctx context.Context, summary *Summary, detec
 		}
 		snapKey := snapshotKey(channelID)
 		if _, exists := restoreSnapshots[snapKey]; !exists {
+			holdUntil := now.Unix() + int64(probeScheduleDelaySeconds(probeSetting, setting.RetrySeconds))
 			restoreSnapshots[snapKey] = channelSnapshot{
 				ChannelID:    channelID,
 				Status:       channel.Status,
 				Priority:     channel.GetPriority(),
 				Weight:       uint(channel.GetWeight()),
 				SnapshotAt:   now.Unix(),
-				HoldUntil:    now.Unix() + int64(setting.RetrySeconds),
+				HoldUntil:    holdUntil,
 				LastActionAt: now.Unix(),
 			}
+			setStateRestoreWaiting(channelID, "paygo_hard_failure", holdUntil)
+			noteSummaryNextProbeAt(summary, holdUntil)
 		}
 		disabled++
 		clearAffinityByChannelIfNeeded(channelID, setting.RetrySeconds, "paygo_hard_failure", ctx, hooks)
@@ -735,6 +830,7 @@ func restorePaygoHardFailureChannels(ctx context.Context, summary *Summary, chan
 	changed := false
 	for key, snapshot := range snapshots {
 		if snapshot.HoldUntil > now.Unix() {
+			noteSummaryNextProbeAt(summary, snapshot.HoldUntil)
 			continue
 		}
 		channel := channelMap[snapshot.ChannelID]
@@ -744,13 +840,17 @@ func restorePaygoHardFailureChannels(ctx context.Context, summary *Summary, chan
 			continue
 		}
 		summary.LastProbeAt = now.Unix()
+		summary.LastProbeAction = fmt.Sprintf("channel=%d reason=paygo_hard_failure probe_start", snapshot.ChannelID)
 		if !hooks.ProbeChannel(ctx, channel, probeSetting) {
 			if IsEnforceMode() {
-				snapshot.HoldUntil = now.Unix() + int64(probeRetryDelaySeconds(probeSetting))
+				snapshot.HoldUntil = now.Unix() + int64(probeScheduleDelaySeconds(probeSetting, 0))
 				snapshot.LastActionAt = now.Unix()
 				snapshots[key] = snapshot
 				changed = true
+				setStateProbeFailedHold(snapshot.ChannelID, "paygo_hard_failure", now.Unix(), snapshot.HoldUntil)
+				noteSummaryNextProbeAt(summary, snapshot.HoldUntil)
 			}
+			summary.LastProbeAction = fmt.Sprintf("channel=%d reason=paygo_hard_failure %s", snapshot.ChannelID, restorePhaseProbeFailedHold)
 			logger.LogInfo(ctx, fmt.Sprintf("routing policy probe-failed paygo channel=%d", snapshot.ChannelID))
 			continue
 		}
@@ -781,8 +881,10 @@ func restorePaygoHardFailureChannels(ctx context.Context, summary *Summary, chan
 			logger.LogWarn(ctx, fmt.Sprintf("routing policy restore channel abilities failed: channel=%d err=%v", snapshot.ChannelID, err))
 		}
 		MarkSuccess(snapshot.ChannelID)
+		setStateRestored(snapshot.ChannelID, "paygo_hard_failure", now.Unix())
 		action := fmt.Sprintf("channel=%d priority=%d weight=%d", snapshot.ChannelID, setting.RestorePriority, setting.RestoreWeight)
 		summary.LastPaygoRestoreAction = action
+		summary.LastProbeAction = fmt.Sprintf("channel=%d reason=paygo_hard_failure %s", snapshot.ChannelID, restorePhaseRestored)
 		logger.LogInfo(ctx, fmt.Sprintf("routing policy probe-success restore paygo channel=%d priority=%d weight=%d", snapshot.ChannelID, setting.RestorePriority, setting.RestoreWeight))
 		delete(snapshots, key)
 		changed = true
@@ -904,6 +1006,69 @@ func restorePaygoNudgeSnapshot(ctx context.Context, summary *Summary, channelMap
 	}
 }
 
+func restoreSlowChannelAutoDisabledChannels(ctx context.Context, summary *Summary, channelMap map[int]*model.Channel, now time.Time, hooks AutomationHooks) map[int]struct{} {
+	restoredChannels := map[int]struct{}{}
+	setting := operation_setting.GetRoutingPolicySetting().SlowChannelPolicy
+	probeSetting := operation_setting.GetRoutingPolicySetting().ProbePolicy
+	if !setting.AutoDisableEnabled || !probeSetting.ActiveProbeEnabled || hooks.ProbeChannel == nil {
+		return restoredChannels
+	}
+	snapshots, _ := loadChannelSnapshots(snapshotKeySlowChannelRestore)
+	if len(snapshots) == 0 {
+		return restoredChannels
+	}
+
+	changed := false
+	for key, snapshot := range snapshots {
+		if snapshot.HoldUntil > now.Unix() {
+			noteSummaryNextProbeAt(summary, snapshot.HoldUntil)
+			continue
+		}
+		channel := channelMap[snapshot.ChannelID]
+		if channel == nil {
+			delete(snapshots, key)
+			changed = true
+			continue
+		}
+		summary.LastProbeAt = now.Unix()
+		summary.LastProbeAction = fmt.Sprintf("channel=%d reason=slow_channel probe_start", snapshot.ChannelID)
+		if !hooks.ProbeChannel(ctx, channel, probeSetting) {
+			if IsEnforceMode() {
+				snapshot.HoldUntil = now.Unix() + int64(probeScheduleDelaySeconds(probeSetting, 0))
+				snapshot.LastActionAt = now.Unix()
+				snapshots[key] = snapshot
+				changed = true
+				setStateProbeFailedHold(snapshot.ChannelID, "slow_channel", now.Unix(), snapshot.HoldUntil)
+				noteSummaryNextProbeAt(summary, snapshot.HoldUntil)
+			}
+			summary.LastProbeAction = fmt.Sprintf("channel=%d reason=slow_channel %s", snapshot.ChannelID, restorePhaseProbeFailedHold)
+			logger.LogInfo(ctx, fmt.Sprintf("routing policy probe-failed slow subscription channel=%d", snapshot.ChannelID))
+			continue
+		}
+		if !IsEnforceMode() {
+			logger.LogInfo(ctx, fmt.Sprintf("routing policy would-restore slow subscription channel=%d", snapshot.ChannelID))
+			continue
+		}
+		if channel.Status != common.ChannelStatusEnabled && !model.UpdateChannelStatus(snapshot.ChannelID, "", common.ChannelStatusEnabled, "") {
+			delete(snapshots, key)
+			changed = true
+			continue
+		}
+		channel.Status = common.ChannelStatusEnabled
+		MarkSuccess(snapshot.ChannelID)
+		setStateRestored(snapshot.ChannelID, "slow_channel", now.Unix())
+		summary.LastProbeAction = fmt.Sprintf("channel=%d reason=slow_channel %s", snapshot.ChannelID, restorePhaseRestored)
+		logger.LogInfo(ctx, fmt.Sprintf("routing policy probe-success restore slow subscription channel=%d", snapshot.ChannelID))
+		restoredChannels[snapshot.ChannelID] = struct{}{}
+		delete(snapshots, key)
+		changed = true
+	}
+	if changed {
+		storeChannelSnapshots(snapshotKeySlowChannelRestore, snapshots)
+	}
+	return restoredChannels
+}
+
 func applySubscriptionTransientIsolation(ctx context.Context, summary *Summary, detectRole roleDetector, channels []*model.Channel, now time.Time, hooks AutomationHooks) {
 	if summary == nil {
 		return
@@ -1011,15 +1176,18 @@ func applySubscriptionTransientIsolation(ctx context.Context, summary *Summary, 
 		if action == "" {
 			continue
 		}
+		holdUntil := nowUnix + int64(probeScheduleDelaySeconds(probeSetting, 0))
 		restoreSnapshots[snapshotKey(channelID)] = channelSnapshot{
 			ChannelID:    channelID,
 			Status:       channel.Status,
 			Priority:     channel.GetPriority(),
 			Weight:       uint(channel.GetWeight()),
 			SnapshotAt:   nowUnix,
-			HoldUntil:    nowUnix + int64(probeRetryDelaySeconds(probeSetting)),
+			HoldUntil:    holdUntil,
 			LastActionAt: nowUnix,
 		}
+		setStateRestoreWaiting(channelID, "subscription_transient", holdUntil)
+		noteSummaryNextProbeAt(summary, holdUntil)
 		summary.LastSubscriptionDisableAction = action
 		disabledCount++
 		logger.LogWarn(ctx, fmt.Sprintf("routing policy disable channel=%d reason=subscription_transient hits=%d", channelID, count))
@@ -1044,6 +1212,7 @@ func restoreSubscriptionTransientChannels(ctx context.Context, summary *Summary,
 	changed := false
 	for key, snapshot := range snapshots {
 		if snapshot.HoldUntil > now.Unix() {
+			noteSummaryNextProbeAt(summary, snapshot.HoldUntil)
 			continue
 		}
 		channel := channelMap[snapshot.ChannelID]
@@ -1053,13 +1222,17 @@ func restoreSubscriptionTransientChannels(ctx context.Context, summary *Summary,
 			continue
 		}
 		summary.LastProbeAt = now.Unix()
+		summary.LastProbeAction = fmt.Sprintf("channel=%d reason=subscription_transient probe_start", snapshot.ChannelID)
 		if !hooks.ProbeChannel(ctx, channel, probeSetting) {
 			if IsEnforceMode() {
-				snapshot.HoldUntil = now.Unix() + int64(probeRetryDelaySeconds(probeSetting))
+				snapshot.HoldUntil = now.Unix() + int64(probeScheduleDelaySeconds(probeSetting, 0))
 				snapshot.LastActionAt = now.Unix()
 				snapshots[key] = snapshot
 				changed = true
+				setStateProbeFailedHold(snapshot.ChannelID, "subscription_transient", now.Unix(), snapshot.HoldUntil)
+				noteSummaryNextProbeAt(summary, snapshot.HoldUntil)
 			}
+			summary.LastProbeAction = fmt.Sprintf("channel=%d reason=subscription_transient %s", snapshot.ChannelID, restorePhaseProbeFailedHold)
 			logger.LogInfo(ctx, fmt.Sprintf("routing policy probe-failed subscription channel=%d", snapshot.ChannelID))
 			continue
 		}
@@ -1074,6 +1247,8 @@ func restoreSubscriptionTransientChannels(ctx context.Context, summary *Summary,
 		}
 		channel.Status = common.ChannelStatusEnabled
 		MarkSuccess(snapshot.ChannelID)
+		setStateRestored(snapshot.ChannelID, "subscription_transient", now.Unix())
+		summary.LastProbeAction = fmt.Sprintf("channel=%d reason=subscription_transient %s", snapshot.ChannelID, restorePhaseRestored)
 		logger.LogInfo(ctx, fmt.Sprintf("routing policy probe-success restore subscription channel=%d", snapshot.ChannelID))
 		delete(snapshots, key)
 		changed = true
@@ -1186,6 +1361,11 @@ func applyTemporaryChannelDisable(channel *model.Channel, reason string, retrySe
 	state.Reason = stateReason
 	state.LastErrorAt = now
 	state.CooldownUntil = now + int64(retrySeconds)
+	state.RestorePhase = restorePhaseWaitingProbe
+	state.RestoreReason = stateReason
+	state.RestoreHoldUntil = now + int64(retrySeconds)
+	state.LastProbeResult = ""
+	state.LastRestoreAt = 0
 	storeState(channel.Id, state)
 	return fmt.Sprintf("channel=%d reason=%s hold_seconds=%d", channel.Id, stateReason, retrySeconds)
 }
@@ -1195,6 +1375,20 @@ func probeRetryDelaySeconds(setting operation_setting.RoutingPolicyProbe) int {
 		return setting.ProbeRetrySeconds
 	}
 	return 600
+}
+
+func probeScheduleDelaySeconds(setting operation_setting.RoutingPolicyProbe, fallback int) int {
+	delay := probeRetryDelaySeconds(setting)
+	if fallback > delay {
+		delay = fallback
+	}
+	if setting.ActiveProbeIntervalSeconds > delay {
+		delay = setting.ActiveProbeIntervalSeconds
+	}
+	if delay <= 0 {
+		return 600
+	}
+	return delay
 }
 
 func updateRoutingMode(summary *Summary, subscriptionChannels []*model.Channel, paygoChannels []*model.Channel) {
