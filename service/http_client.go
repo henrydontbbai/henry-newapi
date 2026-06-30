@@ -21,6 +21,10 @@ var (
 	proxyClients    = make(map[string]*http.Client)
 )
 
+type httpClientContextKey string
+
+const httpClientConnectTimeoutContextKey httpClientContextKey = "http_client_connect_timeout"
+
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	fetchSetting := system_setting.GetFetchSetting()
 	urlStr := req.URL.String()
@@ -63,12 +67,45 @@ func GetHttpClient() *http.Client {
 	return httpClient
 }
 
+func WithHTTPClientConnectTimeout(ctx context.Context, timeout time.Duration) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if timeout <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, httpClientConnectTimeoutContextKey, timeout)
+}
+
+func HTTPClientConnectTimeoutFromContext(ctx context.Context) time.Duration {
+	if ctx == nil {
+		return 0
+	}
+	value, _ := ctx.Value(httpClientConnectTimeoutContextKey).(time.Duration)
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
 // GetHttpClientWithProxy returns the default client or a proxy-enabled one when proxyURL is provided.
 func GetHttpClientWithProxy(proxyURL string) (*http.Client, error) {
 	if proxyURL == "" {
 		return GetHttpClient(), nil
 	}
 	return NewProxyHttpClient(proxyURL)
+}
+
+func GetHttpClientForContext(ctx context.Context, proxyURL string) (*http.Client, error) {
+	client, err := GetHttpClientWithProxy(proxyURL)
+	if err != nil {
+		return nil, err
+	}
+	connectTimeout := HTTPClientConnectTimeoutFromContext(ctx)
+	if connectTimeout <= 0 {
+		return client, nil
+	}
+	return cloneHTTPClientWithConnectTimeout(client, connectTimeout), nil
 }
 
 // ResetProxyClientCache 清空代理客户端缓存，确保下次使用时重新初始化
@@ -169,4 +206,68 @@ func NewProxyHttpClient(proxyURL string) (*http.Client, error) {
 	default:
 		return nil, fmt.Errorf("unsupported proxy scheme: %s, must be http, https, socks5 or socks5h", parsedURL.Scheme)
 	}
+}
+
+func cloneHTTPClientWithConnectTimeout(base *http.Client, connectTimeout time.Duration) *http.Client {
+	if base == nil {
+		base = http.DefaultClient
+	}
+	cloned := *base
+	dialer := &net.Dialer{
+		Timeout:   connectTimeout,
+		KeepAlive: 30 * time.Second,
+	}
+
+	if transport, ok := base.Transport.(*http.Transport); ok && transport != nil {
+		transportClone := transport.Clone()
+		if transport.DialContext != nil {
+			originalDialContext := transport.DialContext
+			transportClone.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+				if ctx == nil {
+					ctx = context.Background()
+				}
+				timeoutCtx, cancel := context.WithTimeout(ctx, connectTimeout)
+				defer cancel()
+
+				type dialResult struct {
+					conn net.Conn
+					err  error
+				}
+				resultCh := make(chan dialResult, 1)
+				go func() {
+					conn, err := originalDialContext(timeoutCtx, network, addr)
+					select {
+					case resultCh <- dialResult{conn: conn, err: err}:
+					case <-timeoutCtx.Done():
+						if conn != nil {
+							_ = conn.Close()
+						}
+					}
+				}()
+
+				select {
+				case result := <-resultCh:
+					return result.conn, result.err
+				case <-timeoutCtx.Done():
+					return nil, timeoutCtx.Err()
+				}
+			}
+		} else {
+			transportClone.DialContext = dialer.DialContext
+		}
+		if transportClone.TLSHandshakeTimeout <= 0 || transportClone.TLSHandshakeTimeout > connectTimeout {
+			transportClone.TLSHandshakeTimeout = connectTimeout
+		}
+		cloned.Transport = transportClone
+		return &cloned
+	}
+
+	cloned.Transport = &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         dialer.DialContext,
+		ForceAttemptHTTP2:   true,
+		IdleConnTimeout:     time.Duration(common.RelayIdleConnTimeout) * time.Second,
+		TLSHandshakeTimeout: connectTimeout,
+	}
+	return &cloned
 }

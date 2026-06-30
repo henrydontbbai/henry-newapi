@@ -665,6 +665,57 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 	return false
 }
 
+func ClearChannelAffinityCacheByChannelID(channelID int) int {
+	if channelID <= 0 {
+		return 0
+	}
+	cache := getChannelAffinityCache()
+	keys, err := cache.Keys()
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity cache list keys failed: err=%v", err))
+		return 0
+	}
+	if len(keys) == 0 {
+		return 0
+	}
+
+	fullTarget := fmt.Sprintf("%s:%d", channelAffinityCacheNamespace, channelID)
+	deleteKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		value, found, getErr := cache.Get(key)
+		if getErr != nil {
+			common.SysError(fmt.Sprintf("channel affinity cache get failed: key=%s, err=%v", key, getErr))
+			continue
+		}
+		if !found {
+			continue
+		}
+		if value == channelID {
+			deleteKeys = append(deleteKeys, key)
+			continue
+		}
+		if key == fullTarget {
+			deleteKeys = append(deleteKeys, key)
+		}
+	}
+	if len(deleteKeys) == 0 {
+		return 0
+	}
+
+	deleted, err := cache.DeleteMany(deleteKeys)
+	if err != nil {
+		common.SysError(fmt.Sprintf("channel affinity cache delete many failed: err=%v", err))
+		return 0
+	}
+	count := 0
+	for _, ok := range deleted {
+		if ok {
+			count++
+		}
+	}
+	return count
+}
+
 func ShouldKeepChannelAffinityOnChannelDisabled() bool {
 	setting := operation_setting.GetChannelAffinitySetting()
 	if setting == nil {

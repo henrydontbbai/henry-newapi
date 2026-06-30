@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -90,6 +91,26 @@ func getPriority(group string, model string, retry int) (int, error) {
 	return priorityToUse, nil
 }
 
+func filterAbilitiesByRoutingHealth(abilities []Ability) []Ability {
+	if len(abilities) == 0 || !routingPolicyHooks.IsEnabled() {
+		return abilities
+	}
+	filtered := make([]Ability, 0, len(abilities))
+	now := time.Now()
+	for _, ability := range abilities {
+		decision := routingPolicyHooks.IsChannelHealthy(ability.ChannelId, now)
+		if decision.Healthy {
+			filtered = append(filtered, ability)
+			continue
+		}
+		routingPolicyHooks.LogSkipDecision(nil, ability.ChannelId, decision.Reason, routingPolicyHooks.IsEnforceMode())
+		if !routingPolicyHooks.IsEnforceMode() {
+			filtered = append(filtered, ability)
+		}
+	}
+	return filtered
+}
+
 func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
@@ -122,6 +143,12 @@ func GetChannel(group string, model string, retry int, requestPath string) (*Cha
 		return nil, err
 	}
 	abilities = filterAbilitiesByRequestPath(abilities, requestPath)
+	originalAbilities := abilities
+	abilities = filterAbilitiesByRoutingHealth(abilities)
+	if len(abilities) == 0 && len(originalAbilities) > 0 {
+		routingPolicyHooks.RecordFailOpen(nil, len(originalAbilities))
+		abilities = originalAbilities
+	}
 	channel := Channel{}
 	if len(abilities) > 0 {
 		// Randomly choose one
