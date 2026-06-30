@@ -22,6 +22,7 @@ func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+	service.RegisterSystemTaskHandler(routingAutomationHandler{})
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and
@@ -149,6 +150,23 @@ func (asyncTaskPollHandler) NewPayload() any { return nil }
 
 func (asyncTaskPollHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
 	summary := service.RunTaskPollingOnce(ctx, service.NewSystemTaskProgressReporter(task, runnerID))
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
+}
+
+type routingAutomationHandler struct{}
+
+func (routingAutomationHandler) Type() string { return model.SystemTaskTypeRoutingAutomation }
+
+func (routingAutomationHandler) Enabled() bool {
+	return operation_setting.GetRoutingPolicySetting().Mode != operation_setting.RoutingPolicyModeDisabled
+}
+
+func (routingAutomationHandler) Interval() time.Duration { return time.Minute }
+
+func (routingAutomationHandler) NewPayload() any { return nil }
+
+func (routingAutomationHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	summary := service.RunRoutingAutomationOnce(ctx)
 	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 

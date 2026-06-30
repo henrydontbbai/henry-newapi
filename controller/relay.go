@@ -223,6 +223,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		if newAPIError == nil {
 			relayInfo.LastError = nil
+			service.MarkChannelRoutingSuccess(c.GetInt("channel_id"))
 			return
 		}
 
@@ -305,14 +306,20 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		}, nil
 	}
 	channel, selectGroup, err := service.CacheGetRandomSatisfiedChannel(retryParam)
-
 	info.PriceData.GroupRatioInfo = helper.HandleGroupRatio(c, info)
-
 	if err != nil {
-		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(
+			fmt.Errorf("failed to get available channel for group %s model %s (retry): %s", selectGroup, info.OriginModelName, err.Error()),
+			types.ErrorCodeGetChannelFailed,
+			types.ErrOptionWithSkipRetry(),
+		)
 	}
 	if channel == nil {
-		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
+		return nil, types.NewError(
+			fmt.Errorf("no available channel for group %s model %s (retry)", selectGroup, info.OriginModelName),
+			types.ErrorCodeGetChannelFailed,
+			types.ErrOptionWithSkipRetry(),
+		)
 	}
 
 	newAPIError := middleware.SetupContextForSelectedChannel(c, channel, info.OriginModelName)
@@ -329,9 +336,6 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
-	if types.IsChannelError(openaiErr) {
-		return true
-	}
 	if types.IsSkipRetryError(openaiErr) {
 		return false
 	}
@@ -340,6 +344,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	}
 	if _, ok := c.Get("specific_channel_id"); ok {
 		return false
+	}
+	if types.IsChannelError(openaiErr) {
+		return true
 	}
 	code := openaiErr.StatusCode
 	if code >= 200 && code < 300 {
@@ -356,6 +363,12 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError) {
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
+	switch err.StatusCode {
+	case http.StatusTooManyRequests, http.StatusForbidden, http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
+		service.MarkChannelRoutingFailure(channelError.ChannelId, err.StatusCode, string(err.GetErrorCode()), time.Minute)
+	case 0, http.StatusRequestTimeout:
+		service.MarkChannelRoutingFailure(channelError.ChannelId, err.StatusCode, string(err.GetErrorCode()), time.Minute)
+	}
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
 	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
 	if service.ShouldDisableChannel(err) && channelError.AutoBan {
@@ -403,7 +416,6 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 
 func RelayMidjourney(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatMjProxy, nil, nil)
-
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"description": fmt.Sprintf("failed to generate relay info: %s", err.Error()),
@@ -426,7 +438,6 @@ func RelayMidjourney(c *gin.Context) {
 	default:
 		mjErr = relay.RelayMidjourneySubmit(c, relayInfo)
 	}
-	//err = relayMidjourneySubmit(c, relayMode)
 	log.Println(mjErr)
 	if mjErr != nil {
 		statusCode := http.StatusBadRequest
@@ -520,6 +531,10 @@ func RelayTask(c *gin.Context) {
 
 		if lockedCh, ok := relayInfo.LockedChannel.(*model.Channel); ok && lockedCh != nil {
 			channel = lockedCh
+			if lockedErr := validateLockedTaskChannel(c, channel); lockedErr != nil {
+				taskErr = lockedErr
+				break
+			}
 			if retryParam.GetRetry() > 0 {
 				if setupErr := middleware.SetupContextForSelectedChannel(c, channel, relayInfo.OriginModelName); setupErr != nil {
 					taskErr = service.TaskErrorWrapperLocal(setupErr.Err, "setup_locked_channel_failed", http.StatusInternalServerError)
@@ -550,6 +565,7 @@ func RelayTask(c *gin.Context) {
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
+			service.MarkChannelRoutingSuccess(c.GetInt("channel_id"))
 			break
 		}
 
@@ -603,6 +619,29 @@ func RelayTask(c *gin.Context) {
 	if taskErr != nil {
 		respondTaskError(c, taskErr)
 	}
+}
+
+func validateLockedTaskChannel(c *gin.Context, channel *model.Channel) *dto.TaskError {
+	if !service.ChannelSupportsRequestPath(channel, c.Request.URL.Path) {
+		return service.TaskErrorWrapperLocal(
+			fmt.Errorf("locked channel is not usable for request path"),
+			"locked_channel_path_unsupported",
+			http.StatusServiceUnavailable,
+		)
+	}
+	decision := service.IsChannelRuntimeHealthy(channel.Id, time.Now())
+	if decision.Healthy {
+		return nil
+	}
+	service.LogRoutingSkipDecision(c, channel.Id, decision.Reason, service.IsRoutingPolicyEnforceMode())
+	if !service.IsRoutingPolicyEnforceMode() {
+		return nil
+	}
+	return service.TaskErrorWrapperLocal(
+		fmt.Errorf("locked channel is not usable: %s", decision.Reason),
+		"locked_channel_unhealthy",
+		http.StatusServiceUnavailable,
+	)
 }
 
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）

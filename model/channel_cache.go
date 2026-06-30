@@ -127,6 +127,13 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 		return nil, nil
 	}
 
+	originalChannels := channels
+	channels = filterChannelsByRoutingHealth(channels)
+	if len(channels) == 0 {
+		routingPolicyHooks.RecordFailOpen(nil, len(originalChannels))
+		channels = originalChannels
+	}
+
 	if len(channels) == 1 {
 		if channel, ok := channelsIDM[channels[0]]; ok {
 			return channel, nil
@@ -200,6 +207,26 @@ func GetRandomSatisfiedChannel(group string, model string, retry int, requestPat
 	}
 	// return null if no channel is not found
 	return nil, errors.New("channel not found")
+}
+
+func filterChannelsByRoutingHealth(channels []int) []int {
+	if len(channels) == 0 || !routingPolicyHooks.IsEnabled() {
+		return channels
+	}
+	filtered := make([]int, 0, len(channels))
+	now := time.Now()
+	for _, channelId := range channels {
+		decision := routingPolicyHooks.IsChannelHealthy(channelId, now)
+		if decision.Healthy {
+			filtered = append(filtered, channelId)
+			continue
+		}
+		routingPolicyHooks.LogSkipDecision(nil, channelId, decision.Reason, routingPolicyHooks.IsEnforceMode())
+		if !routingPolicyHooks.IsEnforceMode() {
+			filtered = append(filtered, channelId)
+		}
+	}
+	return filtered
 }
 
 // filterChannelsByRequestPath restricts candidates by request path. Only Advanced

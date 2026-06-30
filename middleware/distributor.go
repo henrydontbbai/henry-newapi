@@ -49,7 +49,7 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidChannelId))
 				return
 			}
-			if channel.Status != common.ChannelStatusEnabled {
+			if !isSpecificChannelUsable(c, channel) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, i18n.T(c, i18n.MsgDistributorChannelDisabled))
 				return
 			}
@@ -104,8 +104,8 @@ func Distribute() func(c *gin.Context) {
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
-					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-						channelSupportsRequestPath(preferred, c.Request.URL.Path) {
+					preferredUsability := isAffinityChannelUsable(c, preferred)
+					if err == nil && preferredUsability.usable {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
@@ -127,6 +127,9 @@ func Distribute() func(c *gin.Context) {
 						}
 					}
 					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {
+						if !preferredUsability.healthy {
+							service.LogRoutingSkipDecision(c, preferredChannelID, preferredUsability.reason, service.IsRoutingPolicyEnforceMode())
+						}
 						service.ClearCurrentChannelAffinityCache(c)
 					}
 				}
@@ -169,18 +172,44 @@ func Distribute() func(c *gin.Context) {
 	}
 }
 
-// channelSupportsRequestPath reports whether a channel can serve the request path.
-// Only Advanced Custom (type 58) channels are path-checked; all other channel types
-// always pass. A type-58 channel is usable only when one of its routes matches.
-func channelSupportsRequestPath(channel *model.Channel, requestPath string) bool {
-	if channel == nil {
+func isSpecificChannelUsable(c *gin.Context, channel *model.Channel) bool {
+	if channel == nil || channel.Status != common.ChannelStatusEnabled {
 		return false
 	}
-	if channel.Type != constant.ChannelTypeAdvancedCustom {
+	if !service.ChannelSupportsRequestPath(channel, c.Request.URL.Path) {
+		return false
+	}
+	decision := service.IsChannelRuntimeHealthy(channel.Id, time.Now())
+	if decision.Healthy {
 		return true
 	}
-	config := channel.GetOtherSettings().AdvancedCustom
-	return config != nil && config.SupportsPath(requestPath)
+	service.LogRoutingSkipDecision(c, channel.Id, decision.Reason, service.IsRoutingPolicyEnforceMode())
+	return !service.IsRoutingPolicyEnforceMode()
+}
+
+type affinityChannelUsability struct {
+	healthy bool
+	reason  string
+	usable  bool
+}
+
+func isAffinityChannelUsable(c *gin.Context, channel *model.Channel) affinityChannelUsability {
+	if channel == nil || channel.Status != common.ChannelStatusEnabled {
+		return affinityChannelUsability{healthy: true}
+	}
+	if !service.ChannelSupportsRequestPath(channel, c.Request.URL.Path) {
+		return affinityChannelUsability{healthy: true}
+	}
+	decision := service.IsChannelRuntimeHealthy(channel.Id, time.Now())
+	if decision.Healthy {
+		return affinityChannelUsability{healthy: true, usable: true}
+	}
+	service.LogRoutingSkipDecision(c, channel.Id, decision.Reason, false)
+	return affinityChannelUsability{
+		healthy: false,
+		reason:  decision.Reason,
+		usable:  !service.IsRoutingPolicyEnforceMode(),
+	}
 }
 
 // getModelFromRequest 从请求中读取模型信息
@@ -463,7 +492,11 @@ func SetupContextForSelectedChannel(c *gin.Context, channel *model.Channel, mode
 	}
 	common.SetContextKey(c, constant.ContextKeyChannelAutoBan, channel.GetAutoBan())
 	common.SetContextKey(c, constant.ContextKeyChannelModelMapping, channel.GetModelMapping())
-	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, channel.GetStatusCodeMapping())
+	statusCodeMapping := channel.GetStatusCodeMapping()
+	if mapped := service.RoutingStatusCodeMappingStringForChannel(channel); mapped != "" {
+		statusCodeMapping = mapped
+	}
+	common.SetContextKey(c, constant.ContextKeyChannelStatusCodeMapping, statusCodeMapping)
 
 	key, index, newAPIError := channel.GetNextEnabledKey()
 	if newAPIError != nil {
