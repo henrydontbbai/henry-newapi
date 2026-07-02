@@ -3202,7 +3202,7 @@
     "规则": "Quy tắc",
     "规则 JSON": "JSON quy tắc",
     "规则 JSON 格式不正确": "Định dạng JSON quy tắc không chính xác",
-    "规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：3600 秒。": "Sử dụng khi ttl_seconds của quy tắc là 0. 0 nghĩa là sử dụng TTL mặc định backend: 3600 giây.",
+    "规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：60 秒。": "Sử dụng khi ttl_seconds của quy tắc là 0. 0 nghĩa là dùng TTL mặc định backend: 60 giây.",
     "规则为 JSON 数组；可视化与 JSON 模式共用同一份数据。": "Quy tắc là mảng JSON; chế độ trực quan và JSON dùng chung dữ liệu.",
     "规则名称（可读性更好，也会出现在管理侧日志中）。": "Tên quy tắc (dễ đọc hơn, cũng hiển thị trong log quản trị).",
     "规则导航": "Điều hướng quy tắc",

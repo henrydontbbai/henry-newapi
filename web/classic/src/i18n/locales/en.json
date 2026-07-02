@@ -2899,7 +2899,7 @@
     "规则": "Rule",
     "规则 JSON": "Rule JSON",
     "规则 JSON 格式不正确": "Rule JSON format is incorrect",
-    "规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：3600 秒。": "Used when rule ttl_seconds is 0. 0 means using backend default TTL: 3600 seconds.",
+    "规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：60 秒。": "Used when rule ttl_seconds is 0. 0 means using backend default TTL: 60 seconds.",
     "规则为 JSON 数组；可视化与 JSON 模式共用同一份数据。": "Rules are a JSON array; visual and JSON modes share the same data.",
     "规则名称（可读性更好，也会出现在管理侧日志中）。": "Rule name (for better readability, also appears in admin logs).",
     "规则导航": "Rule Navigation",

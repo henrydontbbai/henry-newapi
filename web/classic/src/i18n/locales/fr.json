@@ -2884,7 +2884,7 @@
     "规则": "Règle",
     "规则 JSON": "JSON de règle",
     "规则 JSON 格式不正确": "Le format JSON de la règle est incorrect",
-    "规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：3600 秒。": "Utilisé lorsque ttl_seconds de la règle est 0. 0 signifie utiliser le TTL par défaut du backend : 3600 secondes.",
+    "规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：60 秒。": "Utilisé lorsque ttl_seconds de la règle est 0. 0 signifie utiliser le TTL par défaut du backend : 60 secondes.",
     "规则为 JSON 数组；可视化与 JSON 模式共用同一份数据。": "Les règles sont un tableau JSON ; les modes visuel et JSON partagent les mêmes données.",
     "规则名称（可读性更好，也会出现在管理侧日志中）。": "Nom de la règle (pour une meilleure lisibilité, apparaît également dans les journaux d'administration).",
     "规则导航": "Navigation des règles",

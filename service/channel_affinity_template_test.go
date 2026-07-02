@@ -287,11 +287,37 @@ func TestClearChannelAffinityCacheByChannelID(t *testing.T) {
 	require.True(t, foundB)
 }
 
+func TestRecordChannelAffinityFallsBackToNASDefaultTTL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cacheKeySuffix := fmt.Sprintf("codex cli trace:default:record-default-ttl-%d", time.Now().UnixNano())
+	cacheKeyFull := channelAffinityCacheNamespace + ":" + cacheKeySuffix
+	cache := getChannelAffinityCache()
+	t.Cleanup(func() {
+		_, _ = cache.DeleteMany([]string{cacheKeySuffix})
+	})
+
+	ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{
+		CacheKey:   cacheKeyFull,
+		TTLSeconds: 0,
+		RuleName:   "codex cli trace",
+		SkipRetry:  false,
+	})
+	RecordChannelAffinity(ctx, 9529)
+
+	channelID, found, err := cache.Get(cacheKeySuffix)
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, 9529, channelID)
+	require.Equal(t, 60, channelAffinityDefaultTTLSeconds)
+}
+
 func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	setting := operation_setting.GetChannelAffinitySetting()
 	require.NotNil(t, setting)
+	require.Equal(t, 60, setting.DefaultTTLSeconds)
 
 	var codexRule *operation_setting.ChannelAffinityRule
 	for i := range setting.Rules {
@@ -302,6 +328,7 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 		}
 	}
 	require.NotNil(t, codexRule)
+	require.False(t, codexRule.SkipRetryOnFailure)
 
 	affinityValue := fmt.Sprintf("pc-hit-%d", time.Now().UnixNano())
 	cacheKeySuffix := buildChannelAffinityCacheKeySuffix(*codexRule, "gpt-5", "default", affinityValue)
@@ -320,6 +347,10 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	channelID, found := GetPreferredChannelByAffinity(ctx, "gpt-5", "default")
 	require.True(t, found)
 	require.Equal(t, 9527, channelID)
+	meta, ok := getChannelAffinityMeta(ctx)
+	require.True(t, ok)
+	require.Equal(t, 60, meta.TTLSeconds)
+	require.False(t, ShouldSkipRetryAfterChannelAffinityFailure(ctx))
 
 	baseOverride := map[string]interface{}{
 		"temperature": 0.2,
@@ -355,4 +386,47 @@ func TestChannelAffinityHitCodexTemplatePassHeadersEffective(t *testing.T) {
 	require.False(t, exists)
 	_, exists = info.RuntimeHeadersOverride["x-codex-turn-metadata"]
 	require.False(t, exists)
+}
+
+func TestChannelAffinityDefaultClaudeTemplateAllowsRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	setting := operation_setting.GetChannelAffinitySetting()
+	require.NotNil(t, setting)
+	require.Equal(t, 60, setting.DefaultTTLSeconds)
+
+	var claudeRule *operation_setting.ChannelAffinityRule
+	for i := range setting.Rules {
+		rule := &setting.Rules[i]
+		if strings.EqualFold(strings.TrimSpace(rule.Name), "claude cli trace") {
+			claudeRule = rule
+			break
+		}
+	}
+	require.NotNil(t, claudeRule)
+	require.False(t, claudeRule.SkipRetryOnFailure)
+
+	affinityValue := fmt.Sprintf("claude-hit-%d", time.Now().UnixNano())
+	cacheKeySuffix := buildChannelAffinityCacheKeySuffix(*claudeRule, "claude-sonnet-4", "default", affinityValue)
+
+	cache := getChannelAffinityCache()
+	require.NoError(t, cache.SetWithTTL(cacheKeySuffix, 9528, time.Minute))
+	t.Cleanup(func() {
+		_, _ = cache.DeleteMany([]string{cacheKeySuffix})
+	})
+
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(fmt.Sprintf(`{"metadata":{"user_id":"%s"}}`, affinityValue)))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	channelID, found := GetPreferredChannelByAffinity(ctx, "claude-sonnet-4", "default")
+	require.True(t, found)
+	require.Equal(t, 9528, channelID)
+
+	meta, ok := getChannelAffinityMeta(ctx)
+	require.True(t, ok)
+	require.Equal(t, "claude cli trace", meta.RuleName)
+	require.Equal(t, 60, meta.TTLSeconds)
+	require.False(t, ShouldSkipRetryAfterChannelAffinityFailure(ctx))
 }

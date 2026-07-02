@@ -245,7 +245,7 @@ export default function SettingsChannelAffinity(props) {
     [KEY_SWITCH_ON_SUCCESS]: true,
     [KEY_KEEP_ON_CHANNEL_DISABLED]: false,
     [KEY_MAX_ENTRIES]: 100000,
-    [KEY_DEFAULT_TTL]: 3600,
+    [KEY_DEFAULT_TTL]: 60,
     [KEY_RULES]: '[]',
   });
   const refForm = useRef();
@@ -268,7 +268,7 @@ export default function SettingsChannelAffinity(props) {
   const effectiveDefaultTTLSeconds =
     Number(inputs?.[KEY_DEFAULT_TTL] || 0) > 0
       ? Number(inputs?.[KEY_DEFAULT_TTL] || 0)
-      : 3600;
+      : 60;
 
   const buildModalFormValues = (rule) => {
     const r = rule || {};
@@ -974,11 +974,11 @@ export default function SettingsChannelAffinity(props) {
                   field={KEY_DEFAULT_TTL}
                   label={t('默认 TTL（秒）')}
                   min={0}
-                  placeholder='例如 3600…'
+                  placeholder='例如 60…'
                   extraText={
                     <Text type='tertiary' size='small'>
                       {t(
-                        '规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：3600 秒。',
+                        '规则 ttl_seconds 为 0 时使用。0 表示使用后端默认 TTL：60 秒。',
                       )}
                     </Text>
                   }
