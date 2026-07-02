@@ -264,9 +264,13 @@ func TestDoRequestUsesConfiguredHTTPProxyClient(t *testing.T) {
 	t.Cleanup(service.ResetProxyClientCache)
 
 	var proxyHits atomic.Int32
+	var proxyMu sync.Mutex
+	var proxiedURLs []string
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxyHits.Add(1)
-		require.Equal(t, "http://upstream.example/v1/models", r.URL.String())
+		proxyMu.Lock()
+		proxiedURLs = append(proxiedURLs, r.URL.String())
+		proxyMu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer proxy.Close()
@@ -292,6 +296,10 @@ func TestDoRequestUsesConfiguredHTTPProxyClient(t *testing.T) {
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	require.Equal(t, int32(1), proxyHits.Load())
+	proxyMu.Lock()
+	gotProxiedURLs := append([]string(nil), proxiedURLs...)
+	proxyMu.Unlock()
+	require.Equal(t, []string{"http://upstream.example/v1/models"}, gotProxiedURLs)
 }
 
 func TestDoRequestUsesRequestContextConnectTimeoutForSOCKSProxyHandshake(t *testing.T) {
