@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -243,7 +244,9 @@ func TestDoRequestUsesRequestContextConnectTimeoutForTLSHandshake(t *testing.T) 
 
 	req, err := http.NewRequest(http.MethodPost, "https://"+listener.Addr().String()+"/v1/chat/completions", strings.NewReader("{}"))
 	require.NoError(t, err)
-	req = req.WithContext(service.WithHTTPClientConnectTimeout(req.Context(), 50*time.Millisecond))
+	requestCtx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
+	defer cancel()
+	req = req.WithContext(service.WithHTTPClientConnectTimeout(requestCtx, 50*time.Millisecond))
 
 	start := time.Now()
 	resp, err := DoRequest(ctx, req, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
@@ -350,7 +353,9 @@ func TestDoRequestUsesRequestContextConnectTimeoutForSOCKSProxyHandshake(t *test
 
 			req, err := http.NewRequest(http.MethodGet, "http://upstream.example/v1/models", strings.NewReader(""))
 			require.NoError(t, err)
-			req = req.WithContext(service.WithHTTPClientConnectTimeout(req.Context(), 50*time.Millisecond))
+			requestCtx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
+			defer cancel()
+			req = req.WithContext(service.WithHTTPClientConnectTimeout(requestCtx, 50*time.Millisecond))
 			info := &relaycommon.RelayInfo{
 				ChannelMeta: &relaycommon.ChannelMeta{
 					ChannelSetting: dto.ChannelSettings{
