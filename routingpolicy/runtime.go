@@ -257,6 +257,10 @@ func MarkSuccess(channelID int) {
 	state.CooldownUntil = 0
 	state.Reason = ""
 	state.LastStatusCode = 0
+	state.RestorePhase = ""
+	state.RestoreReason = ""
+	state.RestoreHoldUntil = 0
+	state.LastProbeResult = ""
 	storeState(channelID, state)
 }
 
