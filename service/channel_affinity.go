@@ -28,6 +28,7 @@ const (
 
 	channelAffinityCacheNamespace           = "new-api:channel_affinity:v1"
 	channelAffinityUsageCacheStatsNamespace = "new-api:channel_affinity_usage_cache_stats:v1"
+	channelAffinityDefaultTTLSeconds        = 60
 )
 
 var (
@@ -87,7 +88,7 @@ func getChannelAffinityCache() *cachex.HybridCache[int] {
 		}
 		defaultTTLSeconds := setting.DefaultTTLSeconds
 		if defaultTTLSeconds <= 0 {
-			defaultTTLSeconds = 3600
+			defaultTTLSeconds = channelAffinityDefaultTTLSeconds
 		}
 
 		channelAffinityCache = cachex.NewHybridCache[int](cachex.HybridCacheConfig[int]{
@@ -782,7 +783,7 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 		ttlSeconds = setting.DefaultTTLSeconds
 	}
 	if ttlSeconds <= 0 {
-		ttlSeconds = 3600
+		ttlSeconds = channelAffinityDefaultTTLSeconds
 	}
 	cache := getChannelAffinityCache()
 	if err := cache.SetWithTTL(cacheKey, channelID, time.Duration(ttlSeconds)*time.Second); err != nil {
@@ -1018,7 +1019,7 @@ func getChannelAffinityUsageCacheStatsCache() *cachex.HybridCache[ChannelAffinit
 	channelAffinityUsageCacheStatsOnce.Do(func() {
 		setting := operation_setting.GetChannelAffinitySetting()
 		capacity := 100_000
-		defaultTTLSeconds := 3600
+		defaultTTLSeconds := channelAffinityDefaultTTLSeconds
 		if setting != nil {
 			if setting.MaxEntries > 0 {
 				capacity = setting.MaxEntries
