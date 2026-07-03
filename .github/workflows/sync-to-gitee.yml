@@ -7,19 +7,34 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release Tag to sync (e.g. v1.0.0)'
+        description: 'Release tag to sync (e.g. v1.0.0)'
         required: true
         type: string
+      gitee_owner:
+        description: 'Optional override for the target Gitee owner/org'
+        required: false
+        type: string
+      gitee_repo:
+        description: 'Optional override for the target Gitee repository'
+        required: false
+        type: string
 
-# 配置你的 Gitee 仓库信息
 env:
-  GITEE_OWNER: 'QuantumNous'  # 修改为你的 Gitee 用户名
-  GITEE_REPO: 'new-api'                # 修改为你的 Gitee 仓库名
+  GITEE_OWNER: ${{ github.event.inputs.gitee_owner || vars.GITEE_OWNER || '' }}
+  GITEE_REPO: ${{ github.event.inputs.gitee_repo || vars.GITEE_REPO || '' }}
 
 jobs:
   sync-to-gitee:
     runs-on: sync
     steps:
+      - name: Validate Gitee target
+        run: |
+          if [ -z "${GITEE_OWNER}" ] || [ -z "${GITEE_REPO}" ]; then
+            echo "::error::Provide workflow inputs gitee_owner/gitee_repo or repo vars GITEE_OWNER/GITEE_REPO before syncing."
+            exit 1
+          fi
+          echo "Sync target: ${GITEE_OWNER}/${GITEE_REPO}"
+
       - name: Checkout
         uses: actions/checkout@v5
         with:
@@ -31,13 +46,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.event.inputs.tag_name }}
         run: |
-          # 获取 release 信息
           RELEASE_INFO=$(gh release view "$TAG_NAME" --json name,body,tagName,targetCommitish)
-          
+
           RELEASE_NAME=$(echo "$RELEASE_INFO" | jq -r '.name')
           TARGET_COMMITISH=$(echo "$RELEASE_INFO" | jq -r '.targetCommitish')
-          
-          # 使用多行字符串输出
+
           {
             echo "release_name=$RELEASE_NAME"
             echo "target_commitish=$TARGET_COMMITISH"
@@ -45,11 +58,8 @@ jobs:
             echo "$RELEASE_INFO" | jq -r '.body'
             echo "EOF"
           } >> $GITHUB_OUTPUT
-          
-          # 下载 release 的所有附件
+
           gh release download "$TAG_NAME" --dir ./release_assets || echo "No assets to download"
-          
-          # 列出下载的文件
           ls -la ./release_assets/ || echo "No assets directory"
 
       - name: Create Gitee Release
@@ -80,11 +90,10 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: |
-          rm -rf release_assets/
+        run: rm -rf release_assets/
 
       - name: Summary
         if: success()
         run: |
-          echo "✅ Successfully synced release ${{ github.event.inputs.tag_name }} to Gitee!"
-          echo "🔗 Gitee Release URL: https://gitee.com/${{ env.GITEE_OWNER }}/${{ env.GITEE_REPO }}/releases/tag/${{ github.event.inputs.tag_name }}"
+          echo "Successfully synced release ${{ github.event.inputs.tag_name }} to Gitee."
+          echo "Gitee Release URL: https://gitee.com/${{ env.GITEE_OWNER }}/${{ env.GITEE_REPO }}/releases/tag/${{ github.event.inputs.tag_name }}"
