@@ -36,6 +36,7 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 | Guest SSH loopback path | `127.0.0.1:22222` reachable and listening | Passed |
 | Staging HTTP status | usable `/api/status` on `127.0.0.1:13000` or `127.0.0.1:3000` | Failed; no usable body returned |
 | Current classification | one of `offline`, `reachable-but-not-deployed`, `staging-running`, `staging-drifted` | `reachable-but-not-deployed` |
+| Live report traceability | external live report path plus SHA256 | `windows-66-readonly-2026-07-04T03-00-37+08-00.json` / `9CF3E536F3C319A5EF5FAFA091BD27B4158652A316C4B4049379AA4303D4C6F4` |
 | Stable classification compare | `compare-readonly --device 66 --reports-dir outputs --json` succeeds and preserves current staging facts | Passed; `changed_count=0` between the two `2026-07-04` snapshots |
 
 ## Historical 2026-06-30 artifact context
