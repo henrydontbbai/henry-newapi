@@ -9,18 +9,22 @@ This runbook defines the target staging shape for `henry-newapi` on the Debian g
 - Build the application from the current repository source instead of depending on `calciumion/new-api:latest`.
 - Keep the runtime guest-local and loopback-only on `127.0.0.1:13000:3000`.
 
-## Current local preflight fact
+## Current live audit fact (`2026-07-04`)
 
-This repository currently does **not** contain the LAN Device Ops backend files:
+- The authoritative LAN Device Ops backend exists at `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex`.
+- The latest live read-only report is `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex\outputs\windows-66-readonly-2026-07-04T03-00-37+08-00.json`.
+- The current `/66` classification is `reachable-but-not-deployed`.
+- Current live facts from that audit:
+  - host health remained normal
+  - host `sshd` is running
+  - guest loopback SSH `127.0.0.1:22222` is reachable and listening
+  - neither `127.0.0.1:13000/api/status` nor `127.0.0.1:3000/api/status` returned a usable body
 
-- `scripts/lan_device_ops.py`
-- `configs/devices.local.yaml`
-
-That means a live `/66` host audit cannot be driven from this repo alone. Until a valid device-ops backend path is supplied, the live host/guest classification step is **blocked before classification**. Do not invent reachability or bypass that missing backend with ad-hoc write actions.
+This means the current blocker is no longer "missing backend" or "unknown host reachability." The blocker is the staging HTTP runtime behind the already-live host/guest entry path. Do not treat the machine as staged until a later write-scope phase restores a healthy `/api/status`.
 
 ## Classification rules for the live `/66` audit
 
-When the device-ops backend is available again, classify `/66` using these exact outcomes:
+Use the device-ops backend to classify `/66` using these exact outcomes:
 
 - `offline`
   - host SSH cannot be reached, or the host cannot reach guest `127.0.0.1:22222`
@@ -82,6 +86,16 @@ wget -q -O - http://127.0.0.1:13000/api/setup || true
 ```
 
 Use the results to decide whether the state is `reachable-but-not-deployed`, `staging-running`, or `staging-drifted`.
+
+## Current interpretation of the latest audit
+
+Apply the runbook rules to the `2026-07-04` live snapshot as follows:
+
+- not `offline`, because the host read-only refresh succeeded and the guest SSH loopback path is live
+- not `staging-running`, because no usable `/api/status` response exists on `13000` or `3000`
+- currently `reachable-but-not-deployed`, because the guest path exists but there is no evidenced running staging HTTP surface
+
+Any later repair or redeploy must stay within a separate write-scope phase. This runbook section only records the current preprod classification.
 
 ## Staging bring-up procedure
 
@@ -219,4 +233,3 @@ docker compose \
   down -v
 rm -rf data-staging logs-staging
 ```
-

@@ -6,7 +6,16 @@ This file records the latest trusted `/66` evidence for the routing probe/restor
 
 ### Known current state (`2026-07-04`)
 
-- The trusted runtime evidence date is still `2026-06-30`.
+- The LAN Device Ops backend is available and was used from `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex`.
+- A fresh `/66` live read-only refresh was completed on `2026-07-04T03:00:37+08:00`.
+- Latest live report: `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex\outputs\windows-66-readonly-2026-07-04T03-00-37+08-00.json`.
+- Latest live classification: `reachable-but-not-deployed`.
+- Current live host-side facts:
+  - host SSH read-only refresh succeeded
+  - host health remained `healthy`
+  - host `sshd` is running
+  - guest SSH loopback `127.0.0.1:22222` is reachable and has a listener
+  - no usable `/api/status` body was returned on `127.0.0.1:13000` or `127.0.0.1:3000`
 - The historically verified routing slice is already merged on `main`.
 - Relevant merged commits:
   - `8cfec81f feat: add native routing policy baseline and /66 verification docs`
@@ -14,14 +23,54 @@ This file records the latest trusted `/66` evidence for the routing probe/restor
   - `d12c0630 fix: clear pending restore state on routing success`
 - Later engineering closure also landed on `main`, including green `Go CI`, `Frontend CI`, and `Release Dry Run` on `d95aa5ca`.
 
-### Current unknown state
+### Current blocker state
 
-- `/66` has not yet been re-audited as a live preprod/staging environment after the mainline and CI closure work.
-- There is no newer accepted `/66` runtime snapshot than the `2026-06-30` guest verification and smoke evidence.
+- `/66` is no longer blocked on missing audit tooling; it has a current live classification.
+- The current blocker is staging runtime absence or drift on the guest path: guest SSH exists, but there is still no usable HTTP status endpoint on `13000` or `3000`.
+- There is still no newer accepted guest-local targeted Go rerun or guest smoke snapshot than the historical `2026-06-30` evidence below.
 
 ### Historical capture note
 
 At the time the `2026-06-30` evidence was collected, the slice had not yet been committed/pushed/submitted. That historical note is preserved below for context only; it is no longer the current repository state.
+
+## 2026-07-04 live read-only staging audit
+
+- Status: completed
+- Audit backend: `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex`
+- Inventory path used by that backend: `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex\configs\devices.local.yaml`
+- Latest accepted live report: `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex\outputs\windows-66-readonly-2026-07-04T03-00-37+08-00.json`
+- Latest accepted live report SHA256: `9CF3E536F3C319A5EF5FAFA091BD27B4158652A316C4B4049379AA4303D4C6F4`
+- Latest compare command: `compare-readonly --device 66 --reports-dir outputs --json`
+
+### Captured evidence
+
+- `doctor --json` succeeded; only the local terminal encoding warning remained (`stdout_encoding=gbk`), and JSON data stayed parseable.
+- `validate` succeeded against the local device inventory.
+- `status --device 66 --refresh --summary zh-ascii` succeeded and reported:
+  - host status `OK`
+  - host health reason `healthy`
+  - staging classification `reachable-but-not-deployed`
+  - `22222 reachable=True`
+  - `listener=True`
+  - `api_port=-`
+  - `api_success=False`
+- The refreshed live report recorded:
+  - `guest_ssh_reachable=true`
+  - `guest_ssh_listener=true`
+  - `host_sshd_running=true`
+  - `api_status_port=null`
+  - `api_status_http_ok=false`
+  - `api_status_success=false`
+  - `api_setup=null`
+- `compare-readonly --json` succeeded after the backend JSON emission fix and showed `changed_count=0` between the `2026-07-04T02:46:16+08:00` and `2026-07-04T03:00:37+08:00` snapshots.
+- The compare output also confirmed that the persistent failure is isolated to the staging HTTP probes, not host health or guest SSH reachability.
+
+### Live audit conclusion
+
+- `/66` is currently reachable as a Windows staging host.
+- The guest SSH path is still present through the host loopback mapping.
+- `/66` is **not** currently evidenced as a running staging stack because no usable `/api/status` response exists on `127.0.0.1:13000` or `127.0.0.1:3000`.
+- Treat the environment as `reachable-but-not-deployed` until a later write-scope repair or redeploy phase produces a healthy `/api/status` result.
 
 ## Historical local package used for the 2026-06-30 rerun
 
@@ -100,7 +149,7 @@ Those changes are now part of `main` and are no longer a pending local-only incr
 
 - The trusted runtime evidence still belongs to the `/66` Debian guest, not this local Windows machine.
 - The accepted `2026-06-30` evidence remains valid as historical proof for the merged routing slice.
-- The latest open operational question is whether `/66` is currently reachable and staged, not whether the old routing slice landed in Git.
+- The latest open operational question is no longer basic reachability; it is how to restore or redeploy the guest staging HTTP runtime behind the already-reachable host/guest entry path.
 - If any `go` source or test changes again, the package must be re-synced and rerun on `/66`.
 - If runtime wiring or guest smoke behavior changes again, both targeted Go verification and guest smoke must be rerun.
 
