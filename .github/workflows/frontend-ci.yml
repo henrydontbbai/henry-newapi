@@ -28,3 +28,7 @@ jobs:
       - name: Build default frontend
         working-directory: web/default
         run: bun run build
+
+      - name: Build classic frontend
+        working-directory: web/classic
+        run: bun run build

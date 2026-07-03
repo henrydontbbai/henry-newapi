@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Determine Version
@@ -48,7 +48,7 @@ jobs:
           VITE_REACT_APP_VERSION=$VERSION bun run build
           cd ../..
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@v6
         with:
           go-version: '>=1.25.1'
       - name: Build Backend (amd64)
@@ -78,7 +78,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Determine Version
@@ -108,7 +108,7 @@ jobs:
           VITE_REACT_APP_VERSION=$VERSION bun run build
           cd ../..
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@v6
         with:
           go-version: '>=1.25.1'
       - name: Build Backend
@@ -136,7 +136,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
       - name: Determine Version
@@ -165,7 +165,7 @@ jobs:
           VITE_REACT_APP_VERSION=$VERSION bun run build
           cd ../..
       - name: Set up Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        uses: actions/setup-go@v6
         with:
           go-version: '>=1.25.1'
       - name: Build Backend
