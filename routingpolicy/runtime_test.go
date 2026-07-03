@@ -42,3 +42,14 @@ func TestMarkSuccessClearsPendingRestoreState(t *testing.T) {
 	assert.Greater(t, state.LastSuccessAt, int64(100))
 	assert.Equal(t, 3, state.SuccessCount)
 }
+
+func TestNoteSummaryNextProbeAtKeepsEarliestHold(t *testing.T) {
+	var summary Summary
+
+	noteSummaryNextProbeAt(&summary, 300)
+	noteSummaryNextProbeAt(&summary, 180)
+	noteSummaryNextProbeAt(&summary, 260)
+	noteSummaryNextProbeAt(&summary, 0)
+
+	assert.Equal(t, int64(180), summary.NextProbeAt)
+}

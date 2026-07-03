@@ -1286,3 +1286,94 @@ func TestRunRoutingAutomationOnceProbeRestoresSlowAutoDisabledChannel(t *testing
 	assert.Equal(t, int64(0), state.RestoreHoldUntil)
 	assert.Equal(t, int64(0), state.CooldownUntil)
 }
+
+func TestRunRoutingAutomationOnceProbeFailureMarksSlowChannelAsProbeFailedHold(t *testing.T) {
+	truncate(t)
+	resetRoutingRuntimeStateForTest(t)
+
+	setting := operation_setting.GetRoutingPolicySetting()
+	origMode := setting.Mode
+	origSlow := setting.SlowChannelPolicy
+	origProbe := setting.ProbePolicy
+	t.Cleanup(func() {
+		setting.Mode = origMode
+		setting.SlowChannelPolicy = origSlow
+		setting.ProbePolicy = origProbe
+	})
+
+	setting.Mode = operation_setting.RoutingPolicyModeEnforce
+	setting.SlowChannelPolicy.SummaryEnabled = true
+	setting.SlowChannelPolicy.WindowMinutes = 60
+	setting.SlowChannelPolicy.MinRequests = 3
+	setting.SlowChannelPolicy.P95Seconds = 20
+	setting.SlowChannelPolicy.SlowRequestSeconds = 15
+	setting.SlowChannelPolicy.SlowRatioPercent = 50
+	setting.SlowChannelPolicy.AffinityClearEnabled = true
+	setting.SlowChannelPolicy.AutoDisableEnabled = true
+	setting.SlowChannelPolicy.AutoDisableMinP95Seconds = 20
+	setting.SlowChannelPolicy.AutoDisableHoldSeconds = 1
+	setting.SlowChannelPolicy.MinEnabledSubscriptions = 1
+	setting.SlowChannelPolicy.AutoDisableMaxPerRun = 1
+	setting.ProbePolicy.ActiveProbeEnabled = true
+	setting.ProbePolicy.ProbeRetrySeconds = 1
+	setting.ProbePolicy.ActiveProbeIntervalSeconds = 2
+
+	RegisterRoutingPolicyProbeExecutor(func(ctx context.Context, channel *model.Channel, probe operation_setting.RoutingPolicyProbe) bool {
+		return false
+	})
+
+	now := common.GetTimestamp()
+	subTag := "subscription"
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:     3036,
+		Name:   "slow-channel-probe-failed-hold",
+		Status: common.ChannelStatusEnabled,
+		Tag:    &subTag,
+	}).Error)
+	require.NoError(t, model.DB.Create(&model.Channel{
+		Id:     3037,
+		Name:   "slow-channel-probe-failed-floor",
+		Status: common.ChannelStatusEnabled,
+		Tag:    &subTag,
+	}).Error)
+	for i, useTime := range []int{25, 30, 40} {
+		require.NoError(t, model.LOG_DB.Create(&model.Log{
+			UserId:    1,
+			CreatedAt: now - int64(i),
+			Type:      model.LogTypeConsume,
+			Content:   fmt.Sprintf("slow-failed-%d", i),
+			ModelName: "gpt-5",
+			ChannelId: 3036,
+			UseTime:   useTime,
+			Other:     `{"request_path":"/v1/chat/completions"}`,
+		}).Error)
+	}
+
+	firstSummary := RunRoutingAutomationOnce(context.Background())
+	require.Equal(t, []int{3036}, firstSummary.SlowChannels)
+	assert.NotEmpty(t, firstSummary.LastSubscriptionDisableAction)
+	assert.NotZero(t, firstSummary.NextProbeAt)
+
+	firstState := SnapshotRoutingState()[3036]
+	assert.Equal(t, "waiting_probe", firstState.RestorePhase)
+	assert.Equal(t, "slow_channel", firstState.RestoreReason)
+	assert.Greater(t, firstState.RestoreHoldUntil, firstState.LastErrorAt)
+
+	waitForRoutingHoldUntil(t, firstState.RestoreHoldUntil)
+	summary := RunRoutingAutomationOnce(context.Background())
+
+	channelAfter, err := model.GetChannelById(3036, true)
+	require.NoError(t, err)
+	assert.Equal(t, common.ChannelStatusAutoDisabled, channelAfter.Status)
+	assert.NotZero(t, summary.LastProbeAt)
+	assert.NotZero(t, summary.NextProbeAt)
+	assert.Contains(t, summary.LastProbeAction, "probe_failed_hold")
+
+	state := SnapshotRoutingState()[3036]
+	assert.Equal(t, "probe_failed_hold", state.RestorePhase)
+	assert.Equal(t, "slow_channel", state.RestoreReason)
+	assert.Equal(t, "failed", state.LastProbeResult)
+	assert.NotZero(t, state.LastProbeAt)
+	assert.GreaterOrEqual(t, state.RestoreHoldUntil-state.LastProbeAt, int64(2))
+	assert.Equal(t, state.RestoreHoldUntil, summary.NextProbeAt)
+}
