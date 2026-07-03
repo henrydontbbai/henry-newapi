@@ -39,7 +39,8 @@ At the time the `2026-06-30` evidence was collected, the slice had not yet been 
 - Audit backend: `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex`
 - Inventory path used by that backend: `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex\configs\devices.local.yaml`
 - Latest accepted live report: `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex\outputs\windows-66-readonly-2026-07-04T03-00-37+08-00.json`
-- Latest compare artifact: `compare-readonly --device 66 --reports-dir outputs --json`
+- Latest accepted live report SHA256: `9CF3E536F3C319A5EF5FAFA091BD27B4158652A316C4B4049379AA4303D4C6F4`
+- Latest compare command: `compare-readonly --device 66 --reports-dir outputs --json`
 
 ### Captured evidence
 
@@ -47,6 +48,7 @@ At the time the `2026-06-30` evidence was collected, the slice had not yet been 
 - `validate` succeeded against the local device inventory.
 - `status --device 66 --refresh --summary zh-ascii` succeeded and reported:
   - host status `OK`
+  - host health reason `healthy`
   - staging classification `reachable-but-not-deployed`
   - `22222 reachable=True`
   - `listener=True`

@@ -32,7 +32,7 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 | Gate | Required evidence | Current live status |
 | --- | --- | --- |
 | Host read-only audit path | `doctor --json`, `validate`, `status --device 66 --refresh` succeed from the LAN Device Ops backend | Passed via `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex` |
-| Host health | latest host report completes with `failed_count=0` | Passed |
+| Host health | latest host report completes with host status `OK` and health reason `healthy` | Passed |
 | Guest SSH loopback path | `127.0.0.1:22222` reachable and listening | Passed |
 | Staging HTTP status | usable `/api/status` on `127.0.0.1:13000` or `127.0.0.1:3000` | Failed; no usable body returned |
 | Current classification | one of `offline`, `reachable-but-not-deployed`, `staging-running`, `staging-drifted` | `reachable-but-not-deployed` |
