@@ -50,6 +50,7 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 - Go verification commands: `docs/henry-66-guest-verification-commands.md`
 - Smoke checklist: `docs/henry-66-guest-smoke-checklist.md`
 - Evidence log: `docs/henry-66-runtime-evidence-log.md`
+- Staging runbook: `docs/henry-66-staging-runbook.md`
 
 ## Current conclusion
 
