@@ -25,6 +25,15 @@ jobs:
       - name: Run focused Go tests
         run: go test ./relay/channel ./routingpolicy ./service -count=1
 
+      - name: Run relay common regression tests
+        run: go test ./relay/common -count=1
+
+      - name: Run relay ali task regression tests
+        run: go test ./relay/channel/task/ali -count=1
+
+      - name: Run relay doubao task regression tests
+        run: go test ./relay/channel/task/doubao -count=1
+
       - name: Run routing middleware regression tests
         run: go test ./middleware -run 'SpecificChannel|AffinityChannel' -count=1
 
