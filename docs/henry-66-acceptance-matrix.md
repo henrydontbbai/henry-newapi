@@ -1,45 +1,60 @@
 # Henry NewAPI /66 Acceptance Matrix
 
-This matrix tracks the acceptance state for the current `2026-06-30` probe/restore snapshot, not just the earlier baseline snapshot.
+This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and explains how that snapshot relates to the current repository state.
 
-## Current Artifact
+## Current status summary (`2026-07-04`)
 
-- Source package: `henry-newapi-src-current.tar.gz`
-- Latest local SHA256 evidence: `henry-newapi-src-current.tar.gz.sha256`
-- Latest uploaded SHA256 for the current snapshot: `70C5737104CF86F894E17DFB0333E95FBCF8BECE002F9868BFF744534FD679C9`
-- Local host limitation: no `go`, no `docker`
+### Known current state
+
+- The routing baseline plus probe/restore closure work is already on `main`.
+- Relevant merged commits:
+  - `8cfec81f feat: add native routing policy baseline and /66 verification docs`
+  - `2c4e9354 feat: close probe restore loop and refresh /66 verification evidence`
+  - `d12c0630 fix: clear pending restore state on routing success`
+- Mainline engineering closure is green, including `Go CI`, `Frontend CI`, and `Release Dry Run`.
+
+### Current unknown state
+
+- The latest trusted `/66` evidence is still the historical `2026-06-30` guest snapshot below.
+- `/66` has not yet been reclassified as a live preprod/staging environment after those later mainline changes.
+
+## Historical 2026-06-30 artifact context
+
+- Source package used for that rerun: `henry-newapi-src-current.tar.gz`
+- Historical package SHA256: `70C5737104CF86F894E17DFB0333E95FBCF8BECE002F9868BFF744534FD679C9`
+- Local host limitation for that rerun: no `go`, no `docker`
 - Remote target: Debian guest inside `/66`, not the Windows host
-- Current host-side guest SSH mapping: `127.0.0.1:22222 -> guest:22`
+- Host-side guest SSH mapping used: `127.0.0.1:22222 -> guest:22`
 - Verified guest Go path: `/home/newapi/go-1.25.1/bin/go`
 
-## Gate Matrix
+## Historical gate matrix (accepted on 2026-06-30)
 
-| Gate | Required evidence | Current status |
+| Gate | Required evidence | Historical status |
 | --- | --- | --- |
-| Source package excludes unsafe local state | package listing excludes `.git`, `.env*`, `node_modules`, old tarballs, screenshots | Passed for current package |
-| Current-snapshot targeted Go service probe/http-client slice | `/66` guest output for `TestGetHttpClientForContext`, `TestCloneHTTPClientWithConnectTimeoutPreservesExistingDialContext`, `TestRunRoutingAutomationOnceProbe` | Passed on `/66` Debian guest with Go `1.25.1` |
-| Current-snapshot targeted Go service broader routing slice | `/66` guest output for the corrected service rerun including routing, cooldown, affinity, probe/restore coverage | Passed on `/66` Debian guest with Go `1.25.1` |
-| Current-snapshot targeted Go middleware tests | `/66` guest output for `go test ./middleware -run 'SpecificChannel\|AffinityChannel' -count=1 -v` | Passed on `/66` Debian guest with Go `1.25.1` |
-| Current-snapshot targeted Go controller tests | `/66` guest output for `go test ./controller -run 'RoutingAutomation\|ShouldRetry\|LockedTaskChannel' -count=1 -v` | Passed on `/66` Debian guest with Go `1.25.1` |
-| Current-snapshot targeted Go model tests | `/66` guest output for `go test ./model -run 'RoutingPolicy\|GetRandomSatisfiedChannelSkipsUnhealthyAndFailOpens\|GetChannelSkipsUnhealthyAndFailOpens' -count=1 -v` | Passed on `/66` Debian guest with Go `1.25.1` |
+| Source package excludes unsafe local state | package listing excludes `.git`, `.env*`, `node_modules`, old tarballs, screenshots | Passed for the historical package |
+| Targeted Go service probe/http-client slice | `/66` guest output for `TestGetHttpClientForContext`, `TestCloneHTTPClientWithConnectTimeoutPreservesExistingDialContext`, `TestRunRoutingAutomationOnceProbe` | Passed on `/66` Debian guest with Go `1.25.1` |
+| Targeted Go service broader routing slice | `/66` guest output for the corrected service rerun including routing, cooldown, affinity, probe/restore coverage | Passed on `/66` Debian guest with Go `1.25.1` |
+| Targeted Go middleware tests | `/66` guest output for `go test ./middleware -run 'SpecificChannel\|AffinityChannel' -count=1 -v` | Passed on `/66` Debian guest with Go `1.25.1` |
+| Targeted Go controller tests | `/66` guest output for `go test ./controller -run 'RoutingAutomation\|ShouldRetry\|LockedTaskChannel' -count=1 -v` | Passed on `/66` Debian guest with Go `1.25.1` |
+| Targeted Go model tests | `/66` guest output for `go test ./model -run 'RoutingPolicy\|GetRandomSatisfiedChannelSkipsUnhealthyAndFailOpens\|GetChannelSkipsUnhealthyAndFailOpens' -count=1 -v` | Passed on `/66` Debian guest with Go `1.25.1` |
 | Relay/channel compile-level check | `/66` guest output for `go test ./relay/channel -run TestDoesNotExist -count=1` | Passed on `/66` Debian guest |
-| Current-snapshot guest-only Docker smoke | guest output from `docs/henry-66-guest-smoke-checklist.md` showing compose up and `/api/status` on `127.0.0.1:13000` | Passed on `/66` Debian guest with loopback-only `127.0.0.1:13000->3000` |
-| Current-snapshot no Windows-host DB/service dependency | guest smoke showing compose Postgres/Redis only and no host `3306` / `5000` dependency | Passed on `/66`; host `23000` was also unreachable during the accepted isolated smoke |
-| Current-snapshot root/admin setup gate | guest smoke either completes setup or records the exact setup blocker | Passed with disposable guest-only setup completion evidence |
-| Current-snapshot routing observe safety | smoke or runtime evidence from this snapshot that observe-mode startup does not break guest runtime shape | Passed for the default guest startup path; `routing_policy_setting.mode` remains `observe` by default and current smoke stayed healthy |
-| Probe-off safety | targeted tests and current guest runtime confirm probe-gated disables do not run when probe is off | Passed at Go-test level |
-| Current-snapshot audit acceptance | read-only audit review after current-snapshot smoke exists | Passed with notes: evidence is sufficient for current increment closure; host SSH remained flaky during later readback but did not weaken the accepted Go rerun or smoke evidence |
+| Guest-only Docker smoke | guest output from `docs/henry-66-guest-smoke-checklist.md` showing compose up and `/api/status` on `127.0.0.1:13000` | Passed on `/66` Debian guest with loopback-only `127.0.0.1:13000->3000` |
+| No Windows-host DB/service dependency | guest smoke showing compose Postgres/Redis only and no host `3306` / `5000` dependency | Passed on `/66`; host `23000` was also unreachable during the accepted isolated smoke |
+| Root/admin setup gate | guest smoke either completes setup or records the exact setup blocker | Passed with disposable guest-only setup completion evidence |
+| Routing observe safety | smoke or runtime evidence from that snapshot that observe-mode startup does not break guest runtime shape | Passed for the default guest startup path; `routing_policy_setting.mode` remained `observe` |
+| Probe-off safety | targeted tests and guest runtime confirm probe-gated disables do not run when probe is off | Passed at Go-test level |
+| Audit acceptance | read-only audit review after smoke exists | Passed with notes: evidence was sufficient for that increment closure; host SSH later remained flaky during readback |
 
-## Ready-To-Run Guest Inputs
+## Ready-to-run inputs for the next `/66` rerun
 
 - Go verification commands: `docs/henry-66-guest-verification-commands.md`
 - Smoke checklist: `docs/henry-66-guest-smoke-checklist.md`
 - Evidence log: `docs/henry-66-runtime-evidence-log.md`
+- Staging runbook: `docs/henry-66-staging-runbook.md`
 
-## Current Conclusion
+## Current conclusion
 
-- Current-snapshot targeted Go rerun is complete and passed.
-- Current-snapshot guest smoke is complete and captured as refreshed `/66` evidence.
-- Current-snapshot read-only audit acceptance is complete.
-- Audit notes: the accepted evidence set is strong enough for current increment closure; the only standing caution is intermittent `/66` host SSH instability during later readback, not a gap in the accepted Go rerun or smoke evidence.
-- No commit, push, PR, or deployment has been performed for this increment.
+- The historical targeted Go rerun is complete and passed.
+- The historical guest smoke is complete and remains the latest accepted `/66` runtime proof.
+- That historically verified code is now merged on `main`.
+- The remaining gap is operational: `/66` still needs a fresh live audit and staging classification before it can be treated as an actively maintained preprod environment.
