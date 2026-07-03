@@ -1,139 +1,96 @@
-# Henry NewAPI Native Routing Strategy - Baseline Plus Current Increment
+# Henry NewAPI Native Routing Strategy - Current Mainline and /66 Staging Gap
 
 ## Summary
 
-This repository is no longer in a planning-only phase.
+As of `2026-07-04`, the routing-policy work that was validated on `/66` is no longer a pending local slice. The relevant code has already landed on `main`, and the repository now has stable CI coverage for the surrounding areas.
 
-There are now two distinct states that must not be mixed:
+### Current known state
 
-1. the already-pushed native-routing baseline;
-2. the current unsubmitted `2026-06-30` probe/restore increment.
+- The native routing baseline is on `main` via `8cfec81f feat: add native routing policy baseline and /66 verification docs`.
+- The probe/restore closure slice is on `main` via `2c4e9354 feat: close probe restore loop and refresh /66 verification evidence`.
+- The restore-state cleanup follow-up is on `main` via `d12c0630 fix: clear pending restore state on routing success`.
+- The engineering closure around these changes is on `main` and green, including `Go CI`, `Frontend CI`, and `Release Dry Run` on commit `d95aa5ca`.
 
-Current state as of `2026-06-30`:
+### Current unknown state
 
-- native config entry exists: `routing_policy_setting`
-- native runtime state exists: `routingpolicy` summary, state, and snapshot cache
-- native scheduler entry exists: `routing_automation`
-- request-path wiring is connected across cache / DB / affinity / retry / task relay / `specific_channel_id` / locked-channel reuse
-- current probe/restore increment adds request-context connect-timeout propagation and more explicit restore lifecycle state
-- current-snapshot `/66` targeted Go verification passed
-- current-snapshot `/66` guest Docker Compose smoke passed on an isolated guest-only rerun
+- The latest trusted `/66` runtime evidence is still the historical `2026-06-30` Debian guest verification snapshot.
+- `/66` has not yet been re-audited as a living preprod/staging environment after the later mainline and CI closure work.
+- This local Windows machine still does not provide the trusted Go/Docker runtime used for `/66` verification; the trusted runtime target remains the Debian guest inside `/66`.
 
-What remains is not new feature design. Audit closure is now complete; only submit-package closure and any later Git authorization remain for the current increment.
+## Mainline Routing Scope Already Landed
 
-## Implemented Baseline
-
-The pushed baseline already includes:
+The following runtime capabilities are already part of the current branch history and must be treated as shipped code, not as a pending increment:
 
 - native settings for mode, role detection, subscription policy, probe policy, paygo nudge, paygo hard-failure, and slow-channel policy
-- native runtime cooldown / success / failure tracking
-- request-path health gating for:
-  - memory-cache channel selection
-  - DB ability selection
-  - affinity-selected channels
-  - normal relay retry
-  - task relay retry
-  - `specific_channel_id`
-  - locked-channel reuse
-- native automation for:
-  - slow subscription summary
-  - paygo hard-failure isolate / probe restore
-  - paygo nudge hold / restore
-  - subscription transient isolate / probe restore
+- runtime cooldown / success / failure tracking
+- request-path health gating across cache / DB / affinity / retry / task relay / `specific_channel_id` / locked-channel reuse
+- request-context connect-timeout propagation for routing probes and request-path HTTP client selection
+- restore lifecycle state such as waiting, failed-hold, restored, next-probe timing, and last probe/restore markers
+- follow-up `MarkSuccess` cleanup for stale restore fields without wiping `LastProbeAt` and `LastRestoreAt`
 
-## Current Increment
-
-The current unsubmitted increment is a narrower probe/restore closure slice:
+The merged probe/restore slice still maps to the same source/tests that were verified on `/66`:
 
 - `controller/routing_policy_probe.go`
-  - propagate probe connect-timeout through request context
 - `relay/channel/api_request.go`
-  - use context-aware HTTP client selection on the request path
-- `service/http_client.go`
-  - clone HTTP clients with context-driven connect timeout while preserving existing dialer behavior
 - `routingpolicy/runtime.go`
-  - expose restore lifecycle state such as waiting, failed-hold, restored, next-probe timing, and last probe/restore markers
+- `service/http_client.go`
 - `service/routing_policy_test.go`
-  - add restore-state and probe scheduling coverage
 - `service/http_client_test.go`
-  - add direct tests for context-aware HTTP client timeout behavior
 
-This increment is code-complete enough for targeted rerun and now has refreshed smoke evidence; the remaining closure work is submit-boundary cleanup and any later Git decision.
+## Historical /66 Verification Record
 
-## /66 Verification State
+The real verification target for the routing slice remains the Debian guest inside `/66`, not the Windows host itself.
 
-The real verification target remains the Debian guest inside `/66`, not the Windows host itself.
+Historical verified facts from `2026-06-30`:
 
-Current verified facts for this snapshot:
-
-- current package SHA256: `70C5737104CF86F894E17DFB0333E95FBCF8BECE002F9868BFF744534FD679C9`
 - host-side guest SSH mapping: `127.0.0.1:22222 -> guest:22`
-- guest Go version used: `go1.25.1 linux/amd64`
-- current-snapshot targeted Go slices passed for:
+- guest Go version: `go1.25.1 linux/amd64`
+- current package SHA256 at that time: `70C5737104CF86F894E17DFB0333E95FBCF8BECE002F9868BFF744534FD679C9`
+- targeted Go slices passed for:
   - `service` minimal probe/http-client slice
   - `service` broader routing slice
   - `middleware`
   - `controller`
   - `model`
   - `relay/channel` compile-level check
-- current-snapshot guest Docker Compose smoke passed with:
-  - guest-local `postgres:16-alpine` and `redis:7-alpine`;
-  - current guest-built `./new-api` bind-mounted into `calciumion/new-api:latest`;
-  - loopback-only `127.0.0.1:13000 -> 3000`;
-  - successful `GET /api/status`;
-  - disposable root/admin setup completion evidence.
+- guest smoke passed with:
+  - guest-local `postgres:16-alpine` and `redis:7-alpine`
+  - guest-built `./new-api`
+  - loopback-only `127.0.0.1:13000 -> 3000`
+  - successful `GET /api/status`
+  - disposable root/admin setup completion evidence
 
-Earlier loopback-only smoke evidence for the pushed baseline is now superseded by current-snapshot smoke evidence for this request-path increment.
+That snapshot is still the latest trusted runtime evidence, but it should now be read as historical evidence for code that is already on `main`, not as proof that `/66` is currently online.
 
-## Submit Boundary
+## Current /66 Staging Gap
 
-The current branch still needs submit-package collection before any Git write step for this increment.
+What remains is operational, not feature-design work:
 
-Submit boundary rules:
-
-- include:
-  - the six current increment files
-  - the corresponding evidence refresh docs
-- hold locally:
-  - `henry-newapi-src-current.tar.gz`
-  - `henry-newapi-src-current.tar.gz.sha256`
-  - `henry-newapi-src.tar.gz`
-  - `tmp-current-guest-screen.png`
-- do not widen scope into:
-  - frontend settings panel
-  - DB migration
-  - watcher / cron / NAS sidecars
-  - provider or model-routing changes
-  - deployment work
-
-The concrete include / hold / watch list is tracked in `docs/henry-submit-package-plan.md`.
-
-## Remaining Limits
-
-The current state is strong enough to claim refreshed runtime proof for the increment and has now cleared read-only audit acceptance for this snapshot.
-
-Open limits:
-
-- this local Windows machine still has no `go` or `docker`
-- the trusted runtime evidence belongs to the `/66` Debian guest, not this local machine
-- the current increment still needs submit-boundary confirmation before any Git write step
-- if any `go` source or test changes again, the package must be re-synced and re-run on `/66`
-- if runtime wiring or smoke behavior changes again after that, both targeted Go verification and guest smoke must be rerun
+- confirm whether `/66` is currently reachable as a host/guest chain
+- classify `/66` as `offline`, `reachable-but-not-deployed`, `staging-running`, or `staging-drifted`
+- replace the old disposable smoke-only path with a repeatable staging runbook and tracked override file
+- keep the first recovered staging run in the safest mode:
+  - `routing_policy_setting.mode=observe`
+  - `probe_policy.active_probe_enabled=false`
+- avoid Windows-host dependencies (`3306`, `5000`, old `23000`) and keep loopback-only guest exposure
 
 ## Verification Rule
 
 From this point forward:
 
-- if only Markdown docs or submit-package notes change, no `/66` rerun is required
+- if only Markdown docs or staging/release runbook notes change, no `/66` rerun is required
 - if any `go` source or test file changes, rerun targeted `/66` Go verification
-- if runtime wiring or guest smoke behavior changes, rerun targeted `/66` Go verification and guest Docker Compose smoke
+- if runtime wiring, Compose wiring, or guest smoke behavior changes, rerun targeted `/66` Go verification and guest Docker Compose smoke
 
 ## Next Iteration Order
 
-After the current increment is closed with refreshed smoke evidence, the next round should stay narrow and follow this order:
+The next implementation round should stay narrow and follow this order:
 
-1. add direct request-path tests for the `probe -> testChannel -> doRequest -> GetHttpClientForContext` chain;
-2. add proxy-path coverage for the same timeout propagation path;
-3. harden connect-timeout cancellation semantics for custom dialers and SOCKS-backed paths;
-4. expand restore-state matrix coverage, especially slow-channel failed-hold and multi-snapshot timing edge cases;
-5. only after that, reconsider broader routing knobs such as `force_threshold`, `weight_degrade_enabled`, `confirm_window_minutes`, and `auto_disable_cooldown_seconds`.
+1. align `/66` docs with the current mainline state
+2. close `/66` as a repeatable preprod/staging environment
+3. move real release workflows to fork-owned targets before any side-effectful release verification
+4. then resume routing hardening in this order:
+   - direct request-path tests for `probe -> testChannel -> doRequest -> GetHttpClientForContext`
+   - proxy-path coverage for the same timeout propagation path
+   - stronger connect-timeout cancellation semantics for custom dialers and SOCKS-backed paths
+   - broader restore-state matrix coverage, especially slow-channel failed-hold and multi-snapshot timing edges
