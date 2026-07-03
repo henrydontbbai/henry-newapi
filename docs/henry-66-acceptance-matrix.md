@@ -7,16 +7,36 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 ### Known current state
 
 - The routing baseline plus probe/restore closure work is already on `main`.
+- The live `/66` host audit path is restored through `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex`.
+- A fresh `/66` read-only refresh completed on `2026-07-04T03:00:37+08:00`.
+- The current live classification is `reachable-but-not-deployed`.
+- Current live facts:
+  - host health `OK`
+  - host `sshd` running
+  - guest loopback SSH `127.0.0.1:22222` reachable with a listener
+  - no usable `/api/status` body on `127.0.0.1:13000` or `127.0.0.1:3000`
 - Relevant merged commits:
   - `8cfec81f feat: add native routing policy baseline and /66 verification docs`
   - `2c4e9354 feat: close probe restore loop and refresh /66 verification evidence`
   - `d12c0630 fix: clear pending restore state on routing success`
 - Mainline engineering closure is green, including `Go CI`, `Frontend CI`, and `Release Dry Run`.
 
-### Current unknown state
+### Current blocker state
 
-- The latest trusted `/66` evidence is still the historical `2026-06-30` guest snapshot below.
-- `/66` has not yet been reclassified as a live preprod/staging environment after those later mainline changes.
+- `/66` is no longer blocked on missing live-audit tooling.
+- The latest trusted guest-local Go/smoke evidence is still the historical `2026-06-30` snapshot below.
+- The current operational blocker is guest staging runtime absence or drift: the SSH entry path exists, but the expected staging HTTP surface is not up.
+
+## Current live audit gate (`2026-07-04`)
+
+| Gate | Required evidence | Current live status |
+| --- | --- | --- |
+| Host read-only audit path | `doctor --json`, `validate`, `status --device 66 --refresh` succeed from the LAN Device Ops backend | Passed via `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex` |
+| Host health | latest host report completes with `failed_count=0` | Passed |
+| Guest SSH loopback path | `127.0.0.1:22222` reachable and listening | Passed |
+| Staging HTTP status | usable `/api/status` on `127.0.0.1:13000` or `127.0.0.1:3000` | Failed; no usable body returned |
+| Current classification | one of `offline`, `reachable-but-not-deployed`, `staging-running`, `staging-drifted` | `reachable-but-not-deployed` |
+| Stable classification compare | `compare-readonly --device 66 --reports-dir outputs --json` succeeds and preserves current staging facts | Passed; `changed_count=0` between the two `2026-07-04` snapshots |
 
 ## Historical 2026-06-30 artifact context
 
@@ -55,6 +75,7 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 ## Current conclusion
 
 - The historical targeted Go rerun is complete and passed.
-- The historical guest smoke is complete and remains the latest accepted `/66` runtime proof.
+- The historical guest smoke is complete and remains the latest accepted guest runtime proof.
 - That historically verified code is now merged on `main`.
-- The remaining gap is operational: `/66` still needs a fresh live audit and staging classification before it can be treated as an actively maintained preprod environment.
+- `/66` now has a current live classification, and it is **`reachable-but-not-deployed`** rather than unknown.
+- The remaining gap is no longer audit entry; it is staging recovery or redeploy to restore a healthy `/api/status` surface on the guest path.
