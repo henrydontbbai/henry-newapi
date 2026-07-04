@@ -1,4 +1,4 @@
-# Henry /66 Runtime Evidence Log
+﻿# Henry /66 Runtime Evidence Log
 
 This file records the latest trusted `/66` evidence for the routing probe/restore slice and now also records how that evidence relates to the current mainline.
 
@@ -107,7 +107,7 @@ At the time the `2026-06-30` evidence was collected, the slice had not yet been 
 
 ### Recovery conclusion
 
-- The official Store-style WSL runtime is now installed on `/66`, but the host OS build is still too old to use it for WSL2 operations.
+- The official Store-style WSL runtime is now installed on `/66`, but it still reports `Wsl/WSL_E_OS_NOT_SUPPORTED` for WSL2 operations on this Windows Server build.
 - No WSL2 distro was created.
 - No guest Docker / Compose recovery work started.
 - No new staging `/api/status` evidence exists.

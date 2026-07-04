@@ -1,4 +1,4 @@
-# Henry /66 Staging Runbook
+﻿# Henry /66 Staging Runbook
 
 This runbook defines the target staging shape for `henry-newapi` on the Debian guest inside `/66`.
 
@@ -22,7 +22,7 @@ This runbook defines the target staging shape for `henry-newapi` on the Debian g
   - guest loopback SSH `127.0.0.1:22222` is reachable and listening
   - neither `127.0.0.1:13000/api/status` nor `127.0.0.1:3000/api/status` returned a usable body
 
-This means the current blocker is no longer "missing backend" or "unknown host reachability." The blocker is the staging HTTP runtime behind the already-live host/guest entry path. Do not treat the machine as staged until a later write-scope phase restores a healthy `/api/status`.
+This means the current blocker is no longer "missing backend" or "unknown host reachability." The immediate write-scope blocker is host WSL2 runtime support; after that is cleared, the next recovery target is the staging HTTP runtime behind the already-live host/guest entry path. Do not treat the machine as staged until a later write-scope phase restores a healthy `/api/status`.
 
 ## Classification rules for the live `/66` audit
 
