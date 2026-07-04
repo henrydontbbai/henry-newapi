@@ -1,4 +1,4 @@
-# Henry /66 Runtime Evidence Log
+﻿# Henry /66 Runtime Evidence Log
 
 This file records the latest trusted `/66` evidence for the routing probe/restore slice and now also records how that evidence relates to the current mainline.
 
@@ -26,7 +26,8 @@ This file records the latest trusted `/66` evidence for the routing probe/restor
 ### Current blocker state
 
 - `/66` is no longer blocked on missing audit tooling; it has a current live classification.
-- The current blocker is staging runtime absence or drift on the guest path: guest SSH exists, but there is still no usable HTTP status endpoint on `13000` or `3000`.
+- The read-only classification is still `reachable-but-not-deployed`: guest SSH exists, but there is still no usable HTTP status endpoint on `13000` or `3000`.
+- The current write-scope blocker is now narrower and confirmed: `/66` host runtime is blocked from WSL2 recovery on the current Windows Server 2022 build, so guest staging redeploy cannot proceed yet.
 - There is still no newer accepted guest-local targeted Go rerun or guest smoke snapshot than the historical `2026-06-30` evidence below.
 
 ### Historical capture note
@@ -71,6 +72,46 @@ At the time the `2026-06-30` evidence was collected, the slice had not yet been 
 - The guest SSH path is still present through the host loopback mapping.
 - `/66` is **not** currently evidenced as a running staging stack because no usable `/api/status` response exists on `127.0.0.1:13000` or `127.0.0.1:3000`.
 - Treat the environment as `reachable-but-not-deployed` until a later write-scope repair or redeploy phase produces a healthy `/api/status` result.
+
+## 2026-07-04 host-side WSL recovery attempt
+
+- Status: blocked
+- Goal: upgrade `/66` from the old in-box WSL path to a WSL2-capable runtime so a new Debian guest can host staging.
+- Existing rollback point preserved:
+  - `C:\WSL\exports\debian-20260704.tar`
+  - size `3353948160`
+  - last write `2026-07-04 11:06:52 +08:00`
+- Official package used:
+  - file `wsl.2.7.10.0.x64.msi`
+  - source `https://github.com/microsoft/WSL/releases/download/2.7.10/wsl.2.7.10.0.x64.msi`
+  - verified SHA256 `1A62F90A43C03CC5BDA47DFD0B6FAF496AC70FD4389190518120A4F84FC895CF`
+
+### Captured evidence
+
+- The old host entry still used `C:\Windows\System32\wsl.exe` version `10.0.20348.1`.
+- Installing the official MSI succeeded and added a new runtime at `C:\Program Files\WSL\wsl.exe`.
+- The new runtime reports:
+  - WSL version `2.7.10.0`
+  - kernel version `6.18.33.2-2`
+  - Windows version `10.0.20348.169`
+- The new runtime can answer `--version`, which proves the MSI installed correctly.
+- However, the recovery-critical commands still failed:
+  - `C:\Program Files\WSL\wsl.exe --set-default-version 2`
+  - `C:\Program Files\WSL\wsl.exe -l -v`
+- The failure was `Wsl/WSL_E_OS_NOT_SUPPORTED`, and the runtime itself pointed to:
+  - `https://aka.ms/store-wsl-kb-winserver2022`
+  - `https://aka.ms/wslinstall`
+- The existing distros remained stuck at version `1`:
+  - `Debian`
+  - `DebianWSL2`
+
+### Recovery conclusion
+
+- The official Store-style WSL runtime is now installed on `/66`, but it still reports `Wsl/WSL_E_OS_NOT_SUPPORTED` for WSL2 operations on this Windows Server build.
+- No WSL2 distro was created.
+- No guest Docker / Compose recovery work started.
+- No new staging `/api/status` evidence exists.
+- Treat the host as `host runtime blocked` until the required Windows Server 2022 update path behind `aka.ms/store-wsl-kb-winserver2022` is applied.
 
 ## Historical local package used for the 2026-06-30 rerun
 
@@ -149,7 +190,7 @@ Those changes are now part of `main` and are no longer a pending local-only incr
 
 - The trusted runtime evidence still belongs to the `/66` Debian guest, not this local Windows machine.
 - The accepted `2026-06-30` evidence remains valid as historical proof for the merged routing slice.
-- The latest open operational question is no longer basic reachability; it is how to restore or redeploy the guest staging HTTP runtime behind the already-reachable host/guest entry path.
+- The latest open operational question is no longer basic reachability; it is how to clear the `/66` host WSL2 blocker so guest staging can be restored behind the already-reachable host/guest entry path.
 - If any `go` source or test changes again, the package must be re-synced and rerun on `/66`.
 - If runtime wiring or guest smoke behavior changes again, both targeted Go verification and guest smoke must be rerun.
 
