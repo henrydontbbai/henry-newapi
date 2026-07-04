@@ -5,7 +5,7 @@ This runbook defines the target staging shape for `henry-newapi` on the Debian g
 ## Purpose
 
 - Treat `/66` as a **preprod/staging** environment, not a disposable one-shot smoke target.
-- Reuse the repository root `docker-compose.yml`, but pin staging onto a tracked override file: `docker-compose.henry-staging.override.yml`.
+- Use a single tracked staging compose file: `docker-compose.henry-staging.yml`.
 - Build the application from the current repository source instead of depending on `calciumion/new-api:latest`.
 - Keep the runtime guest-local and loopback-only on `127.0.0.1:13000:3000`.
 
@@ -37,11 +37,10 @@ Use the device-ops backend to classify `/66` using these exact outcomes:
 
 ## Tracked files used for staging
 
-- Base compose: `docker-compose.yml`
-- Staging override: `docker-compose.henry-staging.override.yml`
+- Staging compose: `docker-compose.henry-staging.yml`
 - Guest-local secret env file (untracked): `.env.henry-staging.local`
 
-The override file fixes the staging contract:
+The staging compose file fixes the staging contract:
 
 - local-source image build through `Dockerfile`
 - `new-api` exposed only on `127.0.0.1:13000:3000`
@@ -66,6 +65,8 @@ EOF
 chmod 600 .env.henry-staging.local
 ```
 
+Keep both `HENRY_STAGING_POSTGRES_PASSWORD` and `HENRY_STAGING_REDIS_PASSWORD` URL-safe and shell-safe because they are interpolated into connection URLs and service healthchecks. For this staging contract, use only simple ASCII letters, digits, `_`, and `-`. Do not use special characters such as `@`, `:`, `/`, `#`, `%`, quotes, spaces, or shell metacharacters.
+
 ## Read-only audit commands (once host/guest entry works)
 
 Run these before changing anything:
@@ -75,7 +76,7 @@ cd /home/newapi/henry-newapi
 
 pwd
 ls -la
-test -f docker-compose.henry-staging.override.yml && echo tracked_override_present
+test -f docker-compose.henry-staging.yml && echo tracked_staging_compose_present
 test -x /home/newapi/go-1.25.1/bin/go && /home/newapi/go-1.25.1/bin/go version || true
 docker --version || true
 docker compose version || true
@@ -109,22 +110,21 @@ mkdir -p data-staging logs-staging
 
 docker compose \
   --env-file .env.henry-staging.local \
-  -f docker-compose.yml \
-  -f docker-compose.henry-staging.override.yml \
+  -f docker-compose.henry-staging.yml \
   config >/home/newapi/henry-newapi-staging.rendered.yml
 
 docker compose \
   --env-file .env.henry-staging.local \
-  -f docker-compose.yml \
-  -f docker-compose.henry-staging.override.yml \
+  -f docker-compose.henry-staging.yml \
   up -d --build
 
 docker compose \
   --env-file .env.henry-staging.local \
-  -f docker-compose.yml \
-  -f docker-compose.henry-staging.override.yml \
+  -f docker-compose.henry-staging.yml \
   ps
 ```
+
+The staging compose file uses Redis/Postgres healthchecks plus `depends_on.condition=service_healthy`, so the first `up -d --build` should wait for those backing services before `new-api` starts. If `docker compose ps` still shows an unhealthy dependency, inspect that service before judging the application itself as failed.
 
 ## Health and setup verification
 
@@ -192,8 +192,7 @@ A staging stack is not accepted until it survives one restart and remains health
 ```bash
 docker compose \
   --env-file .env.henry-staging.local \
-  -f docker-compose.yml \
-  -f docker-compose.henry-staging.override.yml \
+  -f docker-compose.henry-staging.yml \
   restart
 
 sleep 5
@@ -218,8 +217,7 @@ Stop the staging stack without deleting persistent state:
 ```bash
 docker compose \
   --env-file .env.henry-staging.local \
-  -f docker-compose.yml \
-  -f docker-compose.henry-staging.override.yml \
+  -f docker-compose.henry-staging.yml \
   down
 ```
 
@@ -228,8 +226,7 @@ Only remove volumes and persistent data when you intentionally want a full stagi
 ```bash
 docker compose \
   --env-file .env.henry-staging.local \
-  -f docker-compose.yml \
-  -f docker-compose.henry-staging.override.yml \
+  -f docker-compose.henry-staging.yml \
   down -v
 rm -rf data-staging logs-staging
 ```

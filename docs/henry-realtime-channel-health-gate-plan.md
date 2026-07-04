@@ -68,7 +68,7 @@ What remains is operational, not feature-design work:
 
 - confirm whether `/66` is currently reachable as a host/guest chain
 - classify `/66` as `offline`, `reachable-but-not-deployed`, `staging-running`, or `staging-drifted`
-- replace the old disposable smoke-only path with a repeatable staging runbook and tracked override file (`docs/henry-66-staging-runbook.md`, `docker-compose.henry-staging.override.yml`)
+- replace the old disposable smoke-only path with a repeatable staging runbook and tracked staging compose file (`docs/henry-66-staging-runbook.md`, `docker-compose.henry-staging.yml`)
 - keep the first recovered staging run in the safest mode:
   - `routing_policy_setting.mode=observe`
   - `probe_policy.active_probe_enabled=false`

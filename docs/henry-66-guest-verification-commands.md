@@ -6,11 +6,27 @@ This file records the exact guest-side verification sequence for the current pro
 
 - Target: Debian guest inside `/66`, not the Windows host.
 - Current host-side guest SSH mapping: `127.0.0.1:22222 -> guest:22`.
-- Source package to upload from local Windows: `C:\Users\HHPC\Documents\Codex\henry-newapi\henry-newapi-src-current.tar.gz`.
-- Expected current package SHA256: `70C5737104CF86F894E17DFB0333E95FBCF8BECE002F9868BFF744534FD679C9`.
+- Source package path on local Windows: `C:\Users\HHPC\Documents\Codex\henry-newapi\henry-newapi-src-current.tar.gz`.
 - Guest workspace: `/home/newapi/henry-newapi`.
 - Do not use Windows host MySQL `3306` or Python service `5000`.
 - Known guest Go path: `/home/newapi/go-1.25.1/bin/go`.
+
+## Host-side packaging commands
+
+Before uploading to the guest, regenerate the package from the current local workspace and record the SHA256 from that exact file:
+
+```powershell
+if (Test-Path C:\Users\HHPC\Documents\Codex\henry-newapi\henry-newapi-src-current.tar.gz) { Remove-Item C:\Users\HHPC\Documents\Codex\henry-newapi\henry-newapi-src-current.tar.gz }
+tar -czf C:\Users\HHPC\Documents\Codex\henry-newapi\henry-newapi-src-current.tar.gz --exclude=.git --exclude=web/node_modules --exclude=web/default/dist --exclude=web/classic/dist -C C:\Users\HHPC\Documents\Codex\henry-newapi .
+Get-FileHash C:\Users\HHPC\Documents\Codex\henry-newapi\henry-newapi-src-current.tar.gz -Algorithm SHA256
+```
+
+Acceptance:
+
+- upload only the package generated in this step
+- record the actual SHA256 value in the current `/66` evidence note
+- do not reuse a historical SHA256 from an earlier guest rerun
+- make sure the package includes `docker-compose.henry-staging.yml` before upload
 
 ## Guest Commands
 
@@ -21,6 +37,7 @@ export PATH=/home/newapi/go-1.25.1/bin:$PATH
 
 cd /home/newapi
 mkdir -p henry-newapi
+sha256sum /home/newapi/henry-newapi-src-current.tar.gz
 tar -xzf /home/newapi/henry-newapi-src-current.tar.gz -C /home/newapi/henry-newapi --strip-components=1
 cd /home/newapi/henry-newapi
 
@@ -40,5 +57,6 @@ go test ./relay/channel -run TestDoesNotExist -count=1
 ## Acceptance Notes
 
 - Passing these commands proves compile-level viability and current-snapshot targeted behavior for the touched backend slices.
+- The `sha256sum` output above must match the host-side SHA256 recorded from the package generated for this exact rerun.
 - It does not by itself prove current-snapshot Docker Compose smoke, setup flow, or probe success against real upstream channels.
-- Because this increment changes request-path runtime wiring, the next step remains the isolated guest smoke checklist in `docs/henry-66-guest-smoke-checklist.md` with loopback-only exposure at `127.0.0.1:13000`.
+- The next runtime step is the tracked staging bring-up from `docs/henry-66-staging-runbook.md` using `docker-compose.henry-staging.yml`.
