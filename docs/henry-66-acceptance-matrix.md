@@ -25,7 +25,8 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 
 - `/66` is no longer blocked on missing live-audit tooling.
 - The latest trusted guest-local Go/smoke evidence is still the historical `2026-06-30` snapshot below.
-- The current operational blocker is guest staging runtime absence or drift: the SSH entry path exists, but the expected staging HTTP surface is not up.
+- The read-only state is still `reachable-but-not-deployed`: the SSH entry path exists, but the expected staging HTTP surface is not up.
+- The current write-scope blocker is now host-side and more precise: the official WSL 2.7.10 runtime installed on `/66`, but WSL2 commands still fail with `Wsl/WSL_E_OS_NOT_SUPPORTED` on Windows Server 2022 build `10.0.20348.169`.
 
 ## Current live audit gate (`2026-07-04`)
 
@@ -33,6 +34,7 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 | --- | --- | --- |
 | Host read-only audit path | `doctor --json`, `validate`, `status --device 66 --refresh` succeed from the LAN Device Ops backend | Passed via `C:\Users\HHPC\Documents\Codex\ssh-lan-device-codex` |
 | Host health | latest host report completes with host status `OK` and health reason `healthy` | Passed |
+| Host WSL2-capable runtime | official WSL runtime can run `--set-default-version 2` and `-l -v` without `Wsl/WSL_E_OS_NOT_SUPPORTED` | Failed; `C:\Program Files\WSL\wsl.exe` 2.7.10.0 installed, but WSL2 operations are blocked on Windows Server 2022 build `10.0.20348.169` |
 | Guest SSH loopback path | `127.0.0.1:22222` reachable and listening | Passed |
 | Staging HTTP status | usable `/api/status` on `127.0.0.1:13000` or `127.0.0.1:3000` | Failed; no usable body returned |
 | Current classification | one of `offline`, `reachable-but-not-deployed`, `staging-running`, `staging-drifted` | `reachable-but-not-deployed` |
@@ -79,4 +81,4 @@ This matrix preserves the accepted `2026-06-30` `/66` verification snapshot and 
 - The historical guest smoke is complete and remains the latest accepted guest runtime proof.
 - That historically verified code is now merged on `main`.
 - `/66` now has a current live classification, and it is **`reachable-but-not-deployed`** rather than unknown.
-- The remaining gap is no longer audit entry; it is staging recovery or redeploy to restore a healthy `/api/status` surface on the guest path.
+- The remaining gap is no longer audit entry; it is first clearing the `/66` host WSL2 runtime blocker, then restoring a healthy guest staging `/api/status` surface.

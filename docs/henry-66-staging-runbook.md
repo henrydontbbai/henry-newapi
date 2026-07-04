@@ -2,6 +2,8 @@
 
 This runbook defines the target staging shape for `henry-newapi` on the Debian guest inside `/66`.
 
+> Current blocker note (`2026-07-04`): `/66` now has the official Store-style WSL runtime installed at `C:\Program Files\WSL\wsl.exe` version `2.7.10.0`, but WSL2 operations still fail with `Wsl/WSL_E_OS_NOT_SUPPORTED` on Windows Server 2022 build `10.0.20348.169`. Do not continue guest recovery until the host-side Windows Server update path behind `https://aka.ms/store-wsl-kb-winserver2022` is applied.
+
 ## Purpose
 
 - Treat `/66` as a **preprod/staging** environment, not a disposable one-shot smoke target.
