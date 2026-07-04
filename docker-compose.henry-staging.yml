@@ -1,0 +1,71 @@
+services:
+  new-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: henry-newapi-staging:local
+    container_name: henry-newapi-staging
+    restart: unless-stopped
+    command: --log-dir /app/logs
+    ports:
+      - "127.0.0.1:13000:3000"
+    volumes:
+      - ./data-staging:/data
+      - ./logs-staging:/app/logs
+    environment:
+      SQL_DSN: postgresql://root:${HENRY_STAGING_POSTGRES_PASSWORD:?HENRY_STAGING_POSTGRES_PASSWORD is required}@postgres:5432/new-api
+      REDIS_CONN_STRING: redis://:${HENRY_STAGING_REDIS_PASSWORD:?HENRY_STAGING_REDIS_PASSWORD is required}@redis:6379
+      TZ: ${HENRY_STAGING_TZ:-Asia/Shanghai}
+      NODE_NAME: henry-66-staging
+      ERROR_LOG_ENABLED: "true"
+      BATCH_UPDATE_ENABLED: "true"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - henry-staging-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -o '\"success\":\\s*true' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: henry-redis-staging
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${HENRY_STAGING_REDIS_PASSWORD:?HENRY_STAGING_REDIS_PASSWORD is required}"]
+    networks:
+      - henry-staging-network
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$HENRY_STAGING_REDIS_PASSWORD\" PING | grep PONG || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: henry-postgres-staging
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: ${HENRY_STAGING_POSTGRES_PASSWORD:?HENRY_STAGING_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: new-api
+    volumes:
+      - henry_staging_pg_data:/var/lib/postgresql/data
+    networks:
+      - henry-staging-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d new-api || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  henry_staging_pg_data:
+
+networks:
+  henry-staging-network:
+    driver: bridge
